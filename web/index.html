@@ -310,6 +310,7 @@ async function loadStatus() {
   $("#status-body").innerHTML =
     `<div class="headline"><span class="ic">${report.headline_icon}</span><span>${esc(report.headline)}</span></div>
      <div class="checks">${checks}</div>
+     <div class="k muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-top:16px">Kurulum ilerlemesi</div>
      <div class="steps">${steps}</div>`;
   return report;
 }
