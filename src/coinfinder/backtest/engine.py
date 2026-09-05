@@ -70,6 +70,16 @@ class FilterSpec:
         return " / ".join(parts) or "all signals"
 
 
+#: Below this many signals, a result is reported with an explicit caveat. At
+#: n=30 a win-rate interval is roughly plus or minus 15 points, which is wide
+#: enough that the point estimate alone is misleading.
+SMALL_SAMPLE_WARNING = 50
+
+#: Shrinkage constant for ranking. A combination with this many signals is
+#: credited with half of its measured ROI.
+RANKING_PRIOR_SIGNALS = 60
+
+
 @dataclass(slots=True)
 class BacktestResult:
     filter_label: str
@@ -90,8 +100,24 @@ class BacktestResult:
     out_of_sample: dict[str, Any] | None = None
     warnings: list[str] = field(default_factory=list)
 
+    @property
+    def shrunk_roi_pct(self) -> float:
+        """ROI pulled toward zero in proportion to how little evidence there is.
+
+        Ranking on raw ROI hands the leaderboard to whichever combination has
+        the fewest signals, because a 30-signal sample has the widest tails.
+        This is the same shrinkage the wallet scorer applies to win rate, for
+        the same reason.
+        """
+        if self.roi_pct is None or self.signals == 0:
+            return -1e9
+        weight = self.signals / (self.signals + RANKING_PRIOR_SIGNALS)
+        return self.roi_pct * weight
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        out = asdict(self)
+        out["shrunk_roi_pct"] = round(self.shrunk_roi_pct, 2)
+        return out
 
 
 # --- frame construction -------------------------------------------------
@@ -339,6 +365,7 @@ def summarise(
     exit_model: ExitModel,
     size_usd: float,
     out_of_sample: dict[str, Any] | None = None,
+    with_intervals: bool = True,
 ) -> BacktestResult:
     n = df.height
     warnings: list[str] = []
@@ -365,8 +392,12 @@ def summarise(
             median_round_trip_cost_pct=None,
             warnings=[*warnings, "No signals matched this filter."],
         )
-    if n < 30:
-        warnings.append(f"Only {n} signals matched - the interval is wide and easy to misread.")
+    if n < SMALL_SAMPLE_WARNING:
+        warnings.append(
+            f"Only {n} signals matched - at this sample size the confidence "
+            f"interval spans tens of percentage points. Read the interval, not "
+            f"the point estimate."
+        )
 
     nets = [v for v in df["net_multiple"].to_list() if v is not None]
     pnl = _num(df["pnl_usd"].sum())
@@ -379,9 +410,9 @@ def summarise(
         uses_look_ahead=exit_model.uses_look_ahead,
         signals=n,
         win_rate=round(wins / len(nets), 4) if nets else None,
-        win_rate_ci=_bootstrap_ci(nets, "win_rate"),
+        win_rate_ci=_bootstrap_ci(nets, "win_rate") if with_intervals else None,
         median_net_multiple=round(_num(df["net_multiple"].median()), 4),
-        median_ci=_bootstrap_ci(nets, "median"),
+        median_ci=_bootstrap_ci(nets, "median") if with_intervals else None,
         mean_net_multiple=round(_num(df["net_multiple"].mean()), 4),
         total_pnl_usd=round(pnl, 2),
         roi_pct=round(100.0 * pnl / invested, 2) if invested else None,
@@ -405,6 +436,7 @@ def run(
     size_usd: float = 100.0,
     cost: CostModel | None = None,
     split_at: datetime | None = None,
+    with_intervals: bool = True,
 ) -> BacktestResult:
     """Run one filter/exit combination, optionally with an out-of-sample split."""
     df = signals if isinstance(signals, pl.DataFrame) else to_frame(signals)
@@ -432,6 +464,7 @@ def run(
         exit_model=exit_model,
         size_usd=size_usd,
         out_of_sample=oos,
+        with_intervals=with_intervals,
     )
 
 
@@ -458,11 +491,18 @@ def search(
     min_signals: int = 25,
     split_at: datetime | None = None,
     include_look_ahead: bool = False,
+    top_n_with_intervals: int = 20,
 ) -> list[BacktestResult]:
-    """Score many combinations and rank them by realistic ROI.
+    """Score many combinations and rank them by shrunk, realistic ROI.
 
-    Look-ahead models are excluded by default: ranking strategies by a number
-    that needs hindsight is precisely how a leaderboard becomes fiction.
+    Two deliberate choices:
+
+    * Look-ahead models are excluded by default. Ranking strategies by a number
+      that needs hindsight is precisely how a leaderboard becomes fiction.
+    * Ranking uses ``shrunk_roi_pct``, not raw ROI. Sweeping hundreds of
+      combinations and sorting by raw return hands first place to whichever
+      one has the fewest signals, since a 30-signal sample has the widest
+      tails. Shrinkage makes a large, good result outrank a small, lucky one.
     """
     df = signals if isinstance(signals, pl.DataFrame) else to_frame(signals)
     models = (
@@ -470,10 +510,38 @@ def search(
         if include_look_ahead
         else tuple(m for m in exit_models if not m.uses_look_ahead)
     )
+    pairs = [(spec, model) for spec in specs for model in models]
+    # Intervals are skipped across the sweep - bootstrapping every combination
+    # dominates the runtime - and computed only for the results handed back.
     results = [
-        run(df, spec=spec, exit_model=model, size_usd=size_usd, cost=cost, split_at=split_at)
-        for spec in specs
-        for model in models
+        (
+            spec,
+            model,
+            run(
+                df,
+                spec=spec,
+                exit_model=model,
+                size_usd=size_usd,
+                cost=cost,
+                split_at=split_at,
+                with_intervals=False,
+            ),
+        )
+        for spec, model in pairs
     ]
-    eligible = [r for r in results if r.signals >= min_signals]
-    return sorted(eligible, key=lambda r: r.roi_pct or -1e9, reverse=True)
+    eligible = [(spec, model, r) for spec, model, r in results if r.signals >= min_signals]
+    eligible.sort(key=lambda item: item[2].shrunk_roi_pct, reverse=True)
+
+    for spec, model, result in eligible[:top_n_with_intervals]:
+        detailed = run(
+            df,
+            spec=spec,
+            exit_model=model,
+            size_usd=size_usd,
+            cost=cost,
+            split_at=split_at,
+            with_intervals=True,
+        )
+        result.win_rate_ci = detailed.win_rate_ci
+        result.median_ci = detailed.median_ci
+    return [result for _, _, result in eligible]

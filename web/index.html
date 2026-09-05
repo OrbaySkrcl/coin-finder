@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Strategy Lab — coin-finder</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔬</text></svg>">
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #121822; --panel-2: #172030; --line: #223047;
+    --text: #e6edf6; --muted: #8fa3bd; --dim: #64748b;
+    --accent: #35d6a4; --accent-dim: #1c8f6d;
+    --warn: #f2b544; --bad: #f2555a; --look: #a97bff;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; padding-bottom: 48px;
+  }
+  a { color: var(--accent); }
+  header {
+    position: sticky; top: 0; z-index: 10; background: rgba(11,15,20,.92);
+    backdrop-filter: blur(12px); border-bottom: 1px solid var(--line);
+    padding: 14px 16px; display: flex; align-items: center; gap: 10px;
+  }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; }
+  header .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+  header .spacer { flex: 1; }
+  header .meta { font-size: 12px; color: var(--muted); }
+  main { max-width: 1080px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em;
+             color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  .card .lede { color: var(--muted); font-size: 13px; margin: -6px 0 14px; }
+  .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .stat { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .stat .v { font-size: 24px; font-weight: 650; margin-top: 4px; letter-spacing: -.02em; }
+  .stat .s { font-size: 12px; color: var(--dim); margin-top: 2px; }
+  .pos { color: var(--accent); } .neg { color: var(--bad); } .warnc { color: var(--warn); }
+  .tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -16px; padding: 0 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 560px; }
+  th, td { text-align: right; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase;
+       letter-spacing: .05em; position: sticky; top: 0; background: var(--panel); }
+  th:first-child, td:first-child { text-align: left; }
+  tbody tr:hover { background: var(--panel-2); }
+  .tag { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 20px;
+         border: 1px solid currentColor; letter-spacing: .04em; vertical-align: middle; }
+  .tag.look { color: var(--look); }
+  .tag.real { color: var(--accent-dim); }
+  .ci { color: var(--dim); font-size: 11px; }
+  label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase;
+          letter-spacing: .05em; margin-bottom: 6px; }
+  input, select {
+    width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 9px; padding: 9px 11px; font: inherit; font-size: 14px;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent-dim); }
+  .row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 7px 13px; border-radius: 20px; border: 1px solid var(--line);
+          background: var(--panel-2); font-size: 13px; cursor: pointer; user-select: none; }
+  .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  button.run { background: var(--accent); color: #07130e; border: 0; border-radius: 10px;
+               padding: 12px 20px; font: inherit; font-weight: 650; cursor: pointer; }
+  button.run:disabled { opacity: .5; cursor: default; }
+  .bars { display: grid; gap: 7px; margin-top: 6px; }
+  .bar { display: grid; grid-template-columns: 82px 1fr 58px; align-items: center; gap: 10px; font-size: 12px; }
+  /* Both must be block: width has no effect on an inline element, which
+     silently rendered every bar at zero. */
+  .bar .track { display: block; height: 20px; background: var(--panel-2);
+                border-radius: 5px; overflow: hidden; }
+  .bar .fill { display: block; height: 100%; min-width: 2px;
+               background: linear-gradient(90deg, var(--accent-dim), var(--accent)); }
+  .bar .fill.loss { background: linear-gradient(90deg, #7a2a2d, var(--bad)); }
+  .bar .n { text-align: right; color: var(--muted); }
+  .note { background: rgba(242,181,68,.08); border: 1px solid rgba(242,181,68,.3);
+          color: #f6d79a; border-radius: 10px; padding: 11px 13px; font-size: 13px; margin-top: 12px; }
+  .note.info { background: rgba(53,214,164,.07); border-color: rgba(53,214,164,.25); color: #9fe7cd; }
+  .muted { color: var(--muted); }
+  .empty { color: var(--dim); text-align: center; padding: 26px; font-size: 14px; }
+  footer { max-width: 1080px; margin: 8px auto 0; padding: 0 16px; color: var(--dim); font-size: 12px; }
+  @media (max-width: 560px) { .stat .v { font-size: 20px; } main { padding: 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="health-dot"></span>
+  <h1>Strategy Lab</h1>
+  <span class="spacer"></span>
+  <span class="meta" id="header-meta">loading…</span>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Live coverage</h2>
+    <div class="grid" id="stats"></div>
+  </section>
+
+  <section class="card">
+    <h2>Exit rule comparison</h2>
+    <p class="lede">
+      Identical signals, identical position size. The only thing that changes is when you sell —
+      and it changes the answer more than any filter does. Rules marked
+      <span class="tag look">hindsight</span> need to know the future peak, so they are a ceiling,
+      not a result you could have achieved.
+    </p>
+    <div class="tablewrap"><table id="compare">
+      <thead><tr><th>Exit rule</th><th>Signals</th><th>Win rate</th><th>Median</th><th>ROI</th><th>PnL</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h2>Backtest your filter</h2>
+    <p class="lede">Net of swap fees, price impact at your position size, and gas.</p>
+    <div class="row">
+      <div>
+        <label for="window">Window</label>
+        <select id="window">
+          <option value="7">7 days</option>
+          <option value="30" selected>30 days</option>
+          <option value="90">90 days</option>
+        </select>
+      </div>
+      <div>
+        <label for="exit">Exit rule</label>
+        <select id="exit"></select>
+      </div>
+      <div>
+        <label for="size">Position size (USD)</label>
+        <input id="size" type="number" value="100" min="1" step="10">
+      </div>
+      <div>
+        <label for="clusters">Min independent wallets</label>
+        <input id="clusters" type="number" value="3" min="1" max="20">
+      </div>
+      <div>
+        <label for="maxmc">Max entry mcap (USD)</label>
+        <input id="maxmc" type="number" placeholder="any" min="0" step="10000">
+      </div>
+      <div>
+        <label for="minliq">Min liquidity (USD)</label>
+        <input id="minliq" type="number" placeholder="any" min="0" step="1000">
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <label>Chains</label>
+      <div class="chips" id="chains"></div>
+    </div>
+    <div style="margin-top:14px" class="chips">
+      <span class="chip" id="safe-toggle" role="button" aria-pressed="false" tabindex="0">Exclude risky tokens</span>
+      <button class="run" id="run">Run backtest</button>
+    </div>
+    <div id="result"></div>
+  </section>
+
+  <section class="card">
+    <h2>Strategy leaderboard</h2>
+    <p class="lede" id="leader-note">
+      Ranked on realistic exits only, with returns shrunk toward zero in proportion to how few
+      signals back them. Read the out-of-sample column: a combination that leads in-sample and
+      collapses out of it is fitted to the past.
+    </p>
+    <div class="tablewrap"><table id="leaders">
+      <thead><tr>
+        <th>Filter</th><th>Exit</th><th>Signals</th><th>Win rate</th><th>ROI</th>
+        <th>In-sample</th><th>Out-of-sample</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h2>Recent signals</h2>
+    <div class="tablewrap"><table id="signals">
+      <thead><tr>
+        <th>Token</th><th>Chain</th><th>Wallets</th><th>MCAP</th><th>Liquidity</th>
+        <th>Safety</th><th>Peak</th><th>Now</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+</main>
+
+<footer>
+  Signals are data, not advice. Most tokens in this market end at zero — the outcome spread on
+  every backtest above shows exactly how often.
+</footer>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const state = { chains: [], selectedChains: new Set(), safeOnly: false, exitModels: [] };
+
+const fmtUsd = (v) => {
+  if (v === null || v === undefined) return "—";
+  const n = Number(v);
+  if (Math.abs(n) >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
+  if (Math.abs(n) >= 1e3) return "$" + (n / 1e3).toFixed(1) + "k";
+  return "$" + n.toFixed(0);
+};
+const fmtPct = (v, digits = 1) =>
+  v === null || v === undefined ? "—" : (Number(v) * 100).toFixed(digits) + "%";
+const fmtRoi = (v) => (v === null || v === undefined ? "—" : (v >= 0 ? "+" : "") + Number(v).toFixed(1) + "%");
+const cls = (v) => (v === null || v === undefined ? "" : Number(v) >= 0 ? "pos" : "neg");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  if (!res.ok) throw new Error(path + " → " + res.status);
+  return res.json();
+}
+
+function ciText(ci, asPct) {
+  if (!ci) return "";
+  const f = asPct ? (v) => (v * 100).toFixed(0) + "%" : (v) => Number(v).toFixed(2) + "x";
+  return `<div class="ci">95% CI ${f(ci[0])} – ${f(ci[1])}</div>`;
+}
+
+async function loadMeta() {
+  const meta = await api("/api/meta");
+  state.chains = meta.chains;
+  state.exitModels = meta.exit_models;
+
+  $("#chains").innerHTML = meta.chains
+    .map((c) => `<span class="chip" role="button" tabindex="0" aria-pressed="true" data-chain="${esc(c.key)}">${esc(c.name)}${c.risk_data_available ? "" : " ⚠️"}</span>`)
+    .join("");
+  meta.chains.forEach((c) => state.selectedChains.add(c.key));
+  $("#chains").querySelectorAll("[data-chain]").forEach((el) => {
+    const toggle = () => {
+      const key = el.dataset.chain;
+      const on = el.getAttribute("aria-pressed") === "true";
+      el.setAttribute("aria-pressed", String(!on));
+      on ? state.selectedChains.delete(key) : state.selectedChains.add(key);
+    };
+    el.addEventListener("click", toggle);
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+  });
+
+  $("#exit").innerHTML = meta.exit_models
+    .map((m) => `<option value="${esc(m.name)}"${m.name === "ladder" ? " selected" : ""}>${esc(m.name)}${m.uses_look_ahead ? " (hindsight)" : ""}</option>`)
+    .join("");
+}
+
+async function loadStats() {
+  const s = await api("/api/stats");
+  const cards = [
+    ["Signals", (s.signals_total ?? 0).toLocaleString(), `${s.signals_24h ?? 0} in the last 24h`],
+    ["Smart wallets", (s.smart_wallets ?? 0).toLocaleString(), `${s.watched_wallets ?? 0} on the watchlist`],
+    ["Trades indexed", (s.trades_total ?? 0).toLocaleString(), "wallet-centric indexing"],
+    ["Subscribers", (s.users ?? 0).toLocaleString(), "Telegram"],
+  ];
+  $("#stats").innerHTML = cards
+    .map(([k, v, sub]) => `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`)
+    .join("");
+  const last = s.last_signal_at ? new Date(s.last_signal_at) : null;
+  $("#header-meta").textContent = last ? "last signal " + last.toLocaleString() : "no signals yet";
+}
+
+async function loadCompare() {
+  const data = await api("/api/backtest/compare?window_days=60");
+  const body = $("#compare tbody");
+  if (!data.results.length) { body.innerHTML = `<tr><td colspan="6" class="empty">No data yet.</td></tr>`; return; }
+  body.innerHTML = data.results
+    .map((r) => `<tr>
+      <td>${esc(r.exit_model)} ${r.uses_look_ahead ? '<span class="tag look">hindsight</span>' : '<span class="tag real">realistic</span>'}</td>
+      <td>${r.signals.toLocaleString()}</td>
+      <td>${fmtPct(r.win_rate)}</td>
+      <td>${r.median_net_multiple === null ? "—" : r.median_net_multiple.toFixed(2) + "x"}</td>
+      <td class="${cls(r.roi_pct)}">${fmtRoi(r.roi_pct)}</td>
+      <td class="${cls(r.total_pnl_usd)}">${fmtUsd(r.total_pnl_usd)}</td>
+    </tr>`)
+    .join("");
+}
+
+function renderResult(r) {
+  if (!r.signals) {
+    $("#result").innerHTML = `<div class="empty">No signals matched this filter.</div>`;
+    return;
+  }
+  const total = Object.values(r.buckets).reduce((a, b) => a + b, 0) || 1;
+  const bars = Object.entries(r.buckets)
+    .map(([name, n]) => `<div class="bar">
+        <span class="muted">${esc(name)}</span>
+        <span class="track"><span class="fill ${name.startsWith("flat") ? "loss" : ""}" style="width:${(100 * n / total).toFixed(1)}%"></span></span>
+        <span class="n">${n}</span>
+      </div>`)
+    .join("");
+
+  const oos = r.out_of_sample
+    ? `<div class="note ${r.out_of_sample.out_of_sample.roi_pct >= 0 ? "info" : ""}">
+         <b>Out-of-sample check.</b>
+         In-sample ROI ${fmtRoi(r.out_of_sample.in_sample.roi_pct)} on ${r.out_of_sample.in_sample.signals} signals →
+         out-of-sample ROI ${fmtRoi(r.out_of_sample.out_of_sample.roi_pct)} on ${r.out_of_sample.out_of_sample.signals} signals.
+       </div>`
+    : "";
+
+  $("#result").innerHTML = `
+    <div class="grid" style="margin-top:16px">
+      <div class="stat"><div class="k">Signals</div><div class="v">${r.signals.toLocaleString()}</div>
+        <div class="s">${fmtPct(r.dead_share, 0)} of tokens died</div></div>
+      <div class="stat"><div class="k">Win rate</div><div class="v">${fmtPct(r.win_rate)}</div>
+        <div class="s">${ciText(r.win_rate_ci, true) || "—"}</div></div>
+      <div class="stat"><div class="k">Median</div><div class="v">${r.median_net_multiple.toFixed(2)}x</div>
+        <div class="s">${ciText(r.median_ci, false) || "net of costs"}</div></div>
+      <div class="stat"><div class="k">ROI</div><div class="v ${cls(r.roi_pct)}">${fmtRoi(r.roi_pct)}</div>
+        <div class="s">${fmtUsd(r.total_pnl_usd)} on ${fmtUsd(r.invested_usd)}</div></div>
+      <div class="stat"><div class="k">Round-trip cost</div>
+        <div class="v warnc">${r.median_round_trip_cost_pct === null ? "—" : r.median_round_trip_cost_pct.toFixed(1) + "%"}</div>
+        <div class="s">median, at your size</div></div>
+    </div>
+    <div style="margin-top:16px"><div class="k muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em">Outcome spread</div>
+      <div class="bars">${bars}</div></div>
+    ${oos}
+    ${r.warnings.map((w) => `<div class="note">${esc(w)}</div>`).join("")}`;
+}
+
+async function runBacktest() {
+  const button = $("#run");
+  button.disabled = true;
+  button.textContent = "Running…";
+  try {
+    const num = (id) => { const v = $(id).value.trim(); return v === "" ? null : Number(v); };
+    const payload = {
+      window_days: Number($("#window").value),
+      chains: [...state.selectedChains],
+      min_clusters: num("#clusters"),
+      max_mcap_usd: num("#maxmc"),
+      min_liquidity_usd: num("#minliq"),
+      safe_only: state.safeOnly,
+      exit_model: $("#exit").value,
+      trade_size_usd: Number($("#size").value) || 100,
+    };
+    renderResult(await api("/api/backtest", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    }));
+  } catch (err) {
+    $("#result").innerHTML = `<div class="note">Backtest failed: ${esc(err.message)}</div>`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Run backtest";
+  }
+}
+
+async function loadLeaders() {
+  const body = $("#leaders tbody");
+  body.innerHTML = `<tr><td colspan="7" class="empty">Sweeping filter combinations…</td></tr>`;
+  const data = await api("/api/strategies/top?window_days=60&limit=10");
+  $("#leader-note").textContent =
+    `${data.combinations_tested} combinations tested. Ranked on realistic exits only, with returns ` +
+    `shrunk toward zero in proportion to how few signals back them. Read the out-of-sample column: ` +
+    `a combination that leads in-sample and collapses out of it is fitted to the past.`;
+  if (!data.strategies.length) { body.innerHTML = `<tr><td colspan="7" class="empty">Not enough signals yet.</td></tr>`; return; }
+  body.innerHTML = data.strategies
+    .map((s) => {
+      const o = s.out_of_sample;
+      return `<tr>
+        <td>${esc(s.filter_label)}</td>
+        <td>${esc(s.exit_model)}</td>
+        <td>${s.signals}</td>
+        <td>${fmtPct(s.win_rate)}${ciText(s.win_rate_ci, true)}</td>
+        <td class="${cls(s.roi_pct)}">${fmtRoi(s.roi_pct)}</td>
+        <td class="${o ? cls(o.in_sample.roi_pct) : ""}">${o ? fmtRoi(o.in_sample.roi_pct) : "—"}</td>
+        <td class="${o ? cls(o.out_of_sample.roi_pct) : ""}"><b>${o ? fmtRoi(o.out_of_sample.roi_pct) : "—"}</b></td>
+      </tr>`;
+    })
+    .join("");
+}
+
+async function loadSignals() {
+  const data = await api("/api/signals?days=14&limit=40");
+  const names = Object.fromEntries(state.chains.map((c) => [c.chain_id, c.name]));
+  const body = $("#signals tbody");
+  if (!data.signals.length) { body.innerHTML = `<tr><td colspan="8" class="empty">No signals yet.</td></tr>`; return; }
+  const safetyClass = { safe: "pos", caution: "warnc", danger: "neg" };
+  body.innerHTML = data.signals
+    .map((s) => `<tr>
+      <td>${esc(s.symbol || s.token.slice(0, 10) + "…")}</td>
+      <td class="muted">${esc(names[s.chain_id] || s.chain_id)}</td>
+      <td>${s.clusters}</td>
+      <td>${fmtUsd(s.mcap_usd)}</td>
+      <td>${fmtUsd(s.liquidity_usd)}</td>
+      <td class="${safetyClass[s.safety] || "muted"}">${esc(s.safety)}</td>
+      <td>${s.peak_multiple === null ? "—" : s.peak_multiple.toFixed(2) + "x"}</td>
+      <td class="${s.is_dead ? "neg" : ""}">${s.is_dead ? "dead" : s.current_multiple === null ? "—" : s.current_multiple.toFixed(2) + "x"}</td>
+    </tr>`)
+    .join("");
+}
+
+$("#run").addEventListener("click", runBacktest);
+const safeChip = $("#safe-toggle");
+const toggleSafe = () => {
+  state.safeOnly = !state.safeOnly;
+  safeChip.setAttribute("aria-pressed", String(state.safeOnly));
+};
+safeChip.addEventListener("click", toggleSafe);
+safeChip.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSafe(); } });
+
+(async () => {
+  try {
+    await loadMeta();
+    await Promise.all([loadStats(), loadCompare(), loadSignals()]);
+    await runBacktest();
+    await loadLeaders();
+  } catch (err) {
+    $("#health-dot").style.background = "var(--bad)";
+    $("#header-meta").textContent = "error: " + err.message;
+  }
+})();
+</script>
+</body>
+</html>

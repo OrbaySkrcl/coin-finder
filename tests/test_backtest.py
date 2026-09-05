@@ -217,6 +217,21 @@ def test_small_sample_carries_a_warning():
     assert any("Only 5 signals" in w for w in r.warnings)
 
 
+def test_sample_size_warning_threshold():
+    from coinfinder.backtest.engine import SMALL_SAMPLE_WARNING
+
+    below = run(
+        [sig(i) for i in range(SMALL_SAMPLE_WARNING - 1)],
+        spec=FilterSpec(),
+        exit_model=HoldToNow(),
+    )
+    at_or_above = run(
+        [sig(i) for i in range(SMALL_SAMPLE_WARNING)], spec=FilterSpec(), exit_model=HoldToNow()
+    )
+    assert any("Only" in w for w in below.warnings)
+    assert not any("Only" in w for w in at_or_above.warnings)
+
+
 def test_bootstrap_interval_brackets_the_point_estimate():
     rows = [sig(i, peak=3.0 if i % 3 else 1.0, current=1.0) for i in range(120)]
     r = run(rows, spec=FilterSpec(), exit_model=FixedTakeProfit(2.0))
@@ -294,3 +309,84 @@ def test_time_stop_uses_the_horizon_column():
     r = run(rows, spec=FilterSpec(), exit_model=TimeStop("4h"))
     # mult_4h is 1.8 for every row, so the median lands just under it.
     assert 1.6 < r.median_net_multiple < 1.8
+
+
+# --- ranking -----------------------------------------------------------
+
+
+def test_shrunk_roi_penalises_small_samples():
+    from coinfinder.backtest.engine import RANKING_PRIOR_SIGNALS
+
+    small = run(
+        [sig(i, peak=6.0, current=3.0) for i in range(30)],
+        spec=FilterSpec(),
+        exit_model=FixedTakeProfit(3.0),
+    )
+    large = run(
+        [sig(i, peak=6.0, current=3.0) for i in range(600)],
+        spec=FilterSpec(),
+        exit_model=FixedTakeProfit(3.0),
+    )
+    # Identical per-signal outcomes, so raw ROI matches...
+    assert small.roi_pct == pytest.approx(large.roi_pct, rel=1e-6)
+    # ...but the larger sample carries far more of it into the ranking.
+    assert large.shrunk_roi_pct > small.shrunk_roi_pct * 2
+    weight = 30 / (30 + RANKING_PRIOR_SIGNALS)
+    assert small.shrunk_roi_pct == pytest.approx(small.roi_pct * weight, rel=1e-6)
+
+
+def test_search_prefers_a_large_solid_result_over_a_marginally_better_small_one():
+    # The realistic trap: a 30-signal combination edges out a 400-signal one on
+    # raw ROI by a modest margin. Shrinkage must hand first place to the one
+    # with the evidence behind it.
+    lucky = [sig(i, peak=5.0, current=4.2, clusters=9) for i in range(30)]
+    solid = [sig(1000 + i, peak=4.0, current=3.4, clusters=3) for i in range(400)]
+    results = search(
+        lucky + solid,
+        specs=[FilterSpec(min_clusters=9), FilterSpec(max_clusters=3)],
+        exit_models=(HoldToNow(),),
+        min_signals=25,
+    )
+    by_size = {r.signals: r for r in results}
+    assert by_size[30].roi_pct > by_size[400].roi_pct  # the trap
+    assert results[0].signals == 400  # ...which shrinkage avoids
+    assert by_size[400].shrunk_roi_pct > by_size[30].shrunk_roi_pct
+
+
+def test_shrinkage_does_not_bury_a_genuinely_large_edge():
+    # Shrinkage is a penalty proportional to missing evidence, not a veto. A
+    # small sample returning many times more must still be able to rank first,
+    # otherwise the leaderboard just sorts by sample size.
+    huge_edge = [sig(i, peak=20.0, current=15.0, clusters=9) for i in range(30)]
+    ordinary = [sig(1000 + i, peak=4.0, current=3.0, clusters=3) for i in range(400)]
+    results = search(
+        huge_edge + ordinary,
+        specs=[FilterSpec(min_clusters=9), FilterSpec(max_clusters=3)],
+        exit_models=(HoldToNow(),),
+        min_signals=25,
+    )
+    assert results[0].signals == 30
+    assert any("Only 30 signals" in w for w in results[0].warnings)
+    assert any("interval" in w for w in results[0].warnings)
+
+
+def test_search_computes_intervals_only_for_the_results_it_returns():
+    rows = [sig(i, peak=4.0, current=2.0, clusters=3 + i % 4) for i in range(400)]
+    results = search(
+        rows,
+        specs=[FilterSpec(min_clusters=c) for c in (3, 4, 5, 6)],
+        exit_models=(FixedTakeProfit(2.0), HoldToNow()),
+        min_signals=10,
+        top_n_with_intervals=2,
+    )
+    assert len(results) > 2
+    assert all(r.win_rate_ci is not None for r in results[:2])
+    assert all(r.win_rate_ci is None for r in results[2:])
+
+
+def test_run_can_skip_intervals():
+    rows = [sig(i) for i in range(100)]
+    fast = run(rows, spec=FilterSpec(), exit_model=HoldToNow(), with_intervals=False)
+    full = run(rows, spec=FilterSpec(), exit_model=HoldToNow(), with_intervals=True)
+    assert fast.win_rate_ci is None and full.win_rate_ci is not None
+    assert fast.win_rate == full.win_rate
