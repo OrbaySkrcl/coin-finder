@@ -58,7 +58,11 @@ async def watched_wallets(chain_id: int) -> list[str]:
 
 
 async def upsert_wallets(chain_id: int, addresses: list[str], *, watch: bool = False) -> None:
-    if not addresses:
+    # Deduplicate first: ON CONFLICT DO UPDATE raises CardinalityViolation if a
+    # single statement proposes the same key twice, and a wallet making several
+    # trades in one batch is the normal case, not an edge case.
+    unique = list(dict.fromkeys(a.lower() for a in addresses))
+    if not unique:
         return
     await db.execute(
         """
@@ -69,7 +73,7 @@ async def upsert_wallets(chain_id: int, addresses: list[str], *, watch: bool = F
         SET watch_since = COALESCE(wallets.watch_since, EXCLUDED.watch_since)
         """,
         chain_id,
-        [a.lower() for a in addresses],
+        unique,
         watch,
     )
 
@@ -104,7 +108,7 @@ async def exclude_wallets(chain_id: int, addresses: list[str], reason: str) -> N
 
 async def set_watchlist(chain_id: int, addresses: list[str]) -> int:
     """Make exactly ``addresses`` the watched set for this chain."""
-    lowered = [a.lower() for a in addresses]
+    lowered = list(dict.fromkeys(a.lower() for a in addresses))
     async with db.acquire() as conn, conn.transaction():
         await conn.execute(
             "UPDATE wallets SET watch_since = NULL WHERE chain_id = $1 AND watch_since IS NOT NULL",
@@ -127,6 +131,7 @@ async def set_watchlist(chain_id: int, addresses: list[str]) -> int:
 
 
 async def upsert_tokens(chain_id: int, tokens: list[dict[str, Any]]) -> None:
+    tokens = list({t["address"].lower(): t for t in tokens}.values())
     if not tokens:
         return
     async with db.acquire() as conn:
@@ -176,6 +181,7 @@ async def ensure_token_rows(chain_id: int, addresses: list[str]) -> None:
 
 
 async def upsert_market(chain_id: int, rows: list[dict[str, Any]]) -> None:
+    rows = list({r["address"].lower(): r for r in rows}.values())
     if not rows:
         return
     async with db.acquire() as conn:
@@ -479,3 +485,144 @@ async def pending_alert_signals(limit: int = 50) -> list[dict[str, Any]]:
         limit,
     )
     return [dict(r) for r in rows]
+
+
+# --- users -------------------------------------------------------------
+
+
+async def ensure_user(telegram_id: int, username: str | None, trial_days: int = 4) -> dict:
+    """Create the user and default filters on first contact; idempotent."""
+    async with db.acquire() as conn, conn.transaction():
+        await conn.execute(
+            """
+            INSERT INTO users (telegram_id, username, trial_ends_at, plan)
+            VALUES ($1, $2, now() + ($3 || ' days')::interval, 'trial')
+            ON CONFLICT (telegram_id) DO UPDATE SET username = EXCLUDED.username
+            """,
+            telegram_id,
+            username,
+            str(trial_days),
+        )
+        await conn.execute(
+            "INSERT INTO user_filters (telegram_id) VALUES ($1) ON CONFLICT DO NOTHING",
+            telegram_id,
+        )
+        row = await conn.fetchrow(
+            """
+            SELECT u.*, f.chains, f.min_clusters, f.min_mcap_usd, f.max_mcap_usd,
+                   f.min_liquidity_usd, f.max_age_minutes, f.require_safe, f.min_quality
+            FROM users u JOIN user_filters f USING (telegram_id)
+            WHERE u.telegram_id = $1
+            """,
+            telegram_id,
+        )
+    return dict(row) if row else {}
+
+
+async def get_user(telegram_id: int) -> dict | None:
+    row = await db.fetchrow(
+        """
+        SELECT u.*, f.chains, f.min_clusters, f.min_mcap_usd, f.max_mcap_usd,
+               f.min_liquidity_usd, f.max_age_minutes, f.require_safe, f.min_quality
+        FROM users u LEFT JOIN user_filters f USING (telegram_id)
+        WHERE u.telegram_id = $1
+        """,
+        telegram_id,
+    )
+    return dict(row) if row else None
+
+
+async def update_filter(telegram_id: int, field: str, value: Any) -> None:
+    allowed = {
+        "chains",
+        "min_clusters",
+        "min_mcap_usd",
+        "max_mcap_usd",
+        "min_liquidity_usd",
+        "max_age_minutes",
+        "require_safe",
+        "min_quality",
+    }
+    if field not in allowed:  # pragma: no cover - guarded at the call site
+        raise ValueError(f"not a filter field: {field}")
+    # Safe: `field` is validated against a fixed allow-list above, never
+    # interpolated from user input.
+    await db.execute(
+        f"UPDATE user_filters SET {field} = $2, updated_at = now() WHERE telegram_id = $1",
+        telegram_id,
+        value,
+    )
+
+
+async def set_alerts_paused(telegram_id: int, paused: bool) -> None:
+    await db.execute(
+        "UPDATE users SET alerts_paused = $2 WHERE telegram_id = $1", telegram_id, paused
+    )
+
+
+async def recipients_for(signal: dict[str, Any], chain_key: str) -> list[int]:
+    """Users whose filters this signal satisfies and who have not seen it."""
+    rows = await db.fetch(
+        """
+        SELECT u.telegram_id
+        FROM users u
+        JOIN user_filters f USING (telegram_id)
+        WHERE NOT u.is_blocked
+          AND NOT u.alerts_paused
+          AND (u.paid_until > now() OR u.trial_ends_at > now())
+          AND $1 = ANY(f.chains)
+          AND $2 >= f.min_clusters
+          AND (f.min_mcap_usd     IS NULL OR $3 >= f.min_mcap_usd)
+          AND (f.max_mcap_usd     IS NULL OR $3 <= f.max_mcap_usd)
+          AND (f.min_liquidity_usd IS NULL OR $4 >= f.min_liquidity_usd)
+          AND (f.max_age_minutes  IS NULL OR $5 <= f.max_age_minutes)
+          AND (NOT f.require_safe OR $6 <> 'danger')
+          AND (f.min_quality      IS NULL OR $7 >= f.min_quality)
+          AND NOT EXISTS (
+              SELECT 1 FROM alerts_sent a
+              WHERE a.telegram_id = u.telegram_id AND a.signal_id = $8
+          )
+        """,
+        chain_key,
+        signal.get("distinct_clusters") or 0,
+        signal.get("snap_mcap_usd"),
+        signal.get("snap_liquidity_usd"),
+        signal.get("snap_age_minutes") or 0,
+        signal.get("safety_verdict") or "unknown",
+        signal.get("quality_score") or 0.0,
+        signal["id"],
+    )
+    return [r["telegram_id"] for r in rows]
+
+
+async def record_alert(telegram_id: int, signal_id: int) -> None:
+    await db.execute(
+        """
+        INSERT INTO alerts_sent (telegram_id, signal_id) VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+        """,
+        telegram_id,
+        signal_id,
+    )
+
+
+async def block_user(telegram_id: int) -> None:
+    await db.execute("UPDATE users SET is_blocked = TRUE WHERE telegram_id = $1", telegram_id)
+
+
+async def system_stats() -> dict[str, Any]:
+    row = await db.fetchrow(
+        """
+        SELECT
+          (SELECT count(*) FROM wallets WHERE watch_since IS NOT NULL AND NOT is_excluded)
+              AS watched_wallets,
+          (SELECT count(*) FROM wallet_scores WHERE is_smart) AS smart_wallets,
+          (SELECT count(*) FROM signals) AS signals_total,
+          (SELECT count(*) FROM signals WHERE ts > now() - interval '24 hours') AS signals_24h,
+          (SELECT count(*) FROM wallet_trades) AS trades_total,
+          (SELECT count(*) FROM users) AS users,
+          (SELECT max(ts) FROM wallet_trades) AS last_trade_at,
+          (SELECT max(ts) FROM signals) AS last_signal_at
+        """
+    )
+    return dict(row) if row else {}

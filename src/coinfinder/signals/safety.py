@@ -47,11 +47,19 @@ class SafetyReport:
         return self.verdict is Verdict.DANGER
 
 
+@dataclass(slots=True)
+class OnchainChecks:
+    """Result of the free on-chain reads. Typed so callers cannot mix the fields."""
+
+    lp_burned_pct: float | None = None
+    owner_renounced: bool | None = None
+
+
 async def onchain_checks(
     rpc: RpcPool, chain: Chain, *, token: str, pair_address: str | None
-) -> dict[str, float | bool | None]:
+) -> OnchainChecks:
     """Read LP burn share and ownership renouncement. Two to four eth_calls."""
-    out: dict[str, float | bool | None] = {"lp_burned_pct": None, "owner_renounced": None}
+    out = OnchainChecks()
 
     calls: list[tuple[str, list]] = [
         ("eth_call", [{"to": token, "data": abi.SEL_OWNER}, "latest"]),
@@ -82,14 +90,14 @@ async def onchain_checks(
     owner_raw = results[0]
     if owner_raw and owner_raw != "0x":
         owner = abi.topic_to_address(owner_raw)
-        out["owner_renounced"] = owner == abi.ZERO_ADDRESS
+        out.owner_renounced = owner == abi.ZERO_ADDRESS
     # A token with no owner() at all is fine; many launchpad tokens omit it.
 
     if pair_address and len(results) >= 3:
         supply = abi.decode_uint(results[1])
         burned = abi.decode_uint(results[2])
         if supply and burned is not None:
-            out["lp_burned_pct"] = round(100.0 * burned / supply, 2)
+            out.lp_burned_pct = round(100.0 * burned / supply, 2)
     return out
 
 
