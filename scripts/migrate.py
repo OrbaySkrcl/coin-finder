@@ -5,8 +5,8 @@ import sys
 
 sys.path.insert(0, "src")
 
-from coinfinder.db import migrate  # noqa: E402
-from coinfinder.logging_setup import setup_logging  # noqa: E402
+from coinfinder.db import migrate
+from coinfinder.logging_setup import setup_logging
 
 
 async def main() -> None:

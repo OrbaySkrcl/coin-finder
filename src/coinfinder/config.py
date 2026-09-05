@@ -12,7 +12,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # --- infrastructure -------------------------------------------------
-    database_url: str = Field(default="postgresql://coinfinder:coinfinder@localhost:5432/coinfinder")
+    database_url: str = Field(
+        default="postgresql://coinfinder:coinfinder@localhost:5432/coinfinder"
+    )
     redis_url: str = Field(default="redis://localhost:6379/0")
     log_level: str = Field(default="INFO")
     environment: str = Field(default="development")
@@ -24,7 +26,7 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = Field(default="")
 
     # --- api ------------------------------------------------------------
-    api_host: str = Field(default="0.0.0.0")  # noqa: S104 - container binds all interfaces
+    api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
     public_base_url: str = Field(default="http://localhost:8000")
 
