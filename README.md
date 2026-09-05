@@ -100,14 +100,12 @@ behaviour: nobody can follow a trade that closes in four seconds.
 
 ```bash
 uv sync --all-groups
-docker compose up -d                     # PostgreSQL + Redis
-cp .env.example .env                     # set DATABASE_URL and TELEGRAM_BOT_TOKEN
-uv run python scripts/migrate.py
-
-uv run python -m coinfinder.worker.main  # ingestion, scoring, signals
-uv run python -m coinfinder.bot.main     # Telegram
-uv run python -m coinfinder.api.main     # API + dashboard on :8000
+docker compose up -d          # PostgreSQL + Redis
+cp .env.example .env          # set DATABASE_URL and TELEGRAM_BOT_TOKEN
+uv run python -m coinfinder   # everything, dashboard on :8000
 ```
+
+`RUN_COMPONENTS=api` (or `worker`, `bot`) runs one part at a time.
 
 Want to see the dashboard before any real signals exist?
 
@@ -119,17 +117,39 @@ The seeder writes clearly synthetic data and refuses to run without `--yes`.
 
 ### On Railway
 
-Add the **PostgreSQL** and **Redis** plugins, then create three services from
-this repository — they share one image and differ only in start command:
+One service runs everything. Deploy this repository, add the **PostgreSQL**
+plugin, and set two variables:
 
-| Service | Start command | Public domain |
-|---|---|---|
-| `api` | `python scripts/migrate.py && python -m uvicorn coinfinder.api.main:app --host 0.0.0.0 --port $PORT` | yes |
-| `worker` | `python -m coinfinder.worker.main` | no |
-| `bot` | `python -m coinfinder.bot.main` | no |
+```
+DATABASE_URL       = ${{Postgres.DATABASE_URL}}
+TELEGRAM_BOT_TOKEN = <token from @BotFather>
+```
 
-Set the shared variables once at project level; see `.env.example`. A
-step-by-step walkthrough in Turkish is in [`docs/KURULUM.md`](docs/KURULUM.md).
+Migrations apply on startup, so the start command is just `python -m coinfinder`.
+
+Splitting the parts across separate services is better at scale and needs no
+code change — set `RUN_COMPONENTS` to `api`, `worker` or `bot` per service.
+
+**Guides in Turkish, written for someone who does not code:**
+
+* [`docs/BASLANGIC.md`](docs/BASLANGIC.md) — setup, click by click, no terminal
+* [`docs/KULLANIM.md`](docs/KULLANIM.md) — reading alerts, filters, Strategy Lab
+* [`docs/KURULUM.md`](docs/KURULUM.md) — operations reference and tuning
+
+---
+
+## Operating it without reading logs
+
+The person running this does not code, so every operational question is
+answered in the two places they already look:
+
+* **`/durum` in Telegram** and the **status card** at the top of the dashboard
+  both render the same diagnosis: what is connected, what is not, which setup
+  step is currently running, and when to expect the first signals.
+* If the database is unreachable the app still starts and serves that
+  diagnosis rather than crash-looping, because a restart loop tells a
+  non-technical operator nothing at all. `/health` therefore reports liveness,
+  not correctness — real state lives at `/api/diagnostics`.
 
 ---
 
@@ -166,7 +186,7 @@ ingestion code changes.
 ## Testing
 
 ```bash
-uv run pytest -q          # 171 tests
+uv run pytest -q          # 194 tests
 uv run ruff check src tests scripts
 uv run mypy
 ```

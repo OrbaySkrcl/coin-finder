@@ -20,7 +20,7 @@ from aiogram.types import (
     Message,
 )
 
-from coinfinder import db, repo
+from coinfinder import db, diagnostics, repo
 from coinfinder.backtest.costs import CostModel
 from coinfinder.backtest.engine import FilterSpec, run
 from coinfinder.backtest.exits import by_name
@@ -197,13 +197,19 @@ async def on_top(message: Message) -> None:
     await message.answer(await build_top())
 
 
-@router.message(Command("status"))
+@router.message(Command("durum", "status", "diagnose"))
 async def on_status(message: Message) -> None:
-    stats = await repo.system_stats()
-    lines = ["<b>System</b>"]
-    for key, value in stats.items():
-        lines.append(f"{key.replace('_', ' ')}: <b>{value}</b>")
-    await message.answer("\n".join(lines))
+    """Full system diagnosis in plain language - the owner's alternative to logs."""
+    notice = await message.answer("Kontrol ediyorum…")
+    try:
+        report = await diagnostics.run()
+        await notice.edit_text(report.as_telegram())
+    except Exception as exc:
+        log.exception("diagnostics.failed", error=str(exc))
+        await notice.edit_text(
+            "Teşhis çalıştırılamadı. Bu genelde veritabanına ulaşılamadığı anlamına gelir.\n"
+            f"<code>{type(exc).__name__}</code>"
+        )
 
 
 @router.callback_query(F.data.startswith("menu:"))

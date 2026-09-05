@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Strategy Lab — coin-finder</title>
+<title>Strateji Lab — coin-finder</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🔬</text></svg>">
 <style>
   :root {
     --bg: #0b0f14; --panel: #121822; --panel-2: #172030; --line: #223047;
     --text: #e6edf6; --muted: #8fa3bd; --dim: #64748b;
     --accent: #35d6a4; --accent-dim: #1c8f6d;
-    --warn: #f2b544; --bad: #f2555a; --look: #a97bff;
+    --warn: #f2b544; --bad: #f2555a; --look: #a97bff; --wait: #5aa9e6;
     --radius: 14px;
   }
   * { box-sizing: border-box; }
@@ -26,7 +26,7 @@
     padding: 14px 16px; display: flex; align-items: center; gap: 10px;
   }
   header h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; }
-  header .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+  header .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); }
   header .spacer { flex: 1; }
   header .meta { font-size: 12px; color: var(--muted); }
   main { max-width: 1080px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
@@ -40,6 +40,27 @@
   .stat .v { font-size: 24px; font-weight: 650; margin-top: 4px; letter-spacing: -.02em; }
   .stat .s { font-size: 12px; color: var(--dim); margin-top: 2px; }
   .pos { color: var(--accent); } .neg { color: var(--bad); } .warnc { color: var(--warn); }
+
+  /* --- system status --- */
+  .headline { display: flex; gap: 11px; align-items: flex-start; font-size: 16px;
+              font-weight: 600; line-height: 1.4; margin-bottom: 14px; }
+  .headline .ic { font-size: 20px; line-height: 1.2; }
+  .checks { display: grid; gap: 9px; }
+  .check { display: grid; grid-template-columns: 22px 1fr; gap: 9px;
+           background: var(--panel-2); border: 1px solid var(--line);
+           border-radius: 10px; padding: 10px 12px; }
+  .check .t { font-weight: 600; font-size: 14px; }
+  .check .d { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .check.error { border-color: rgba(242,85,90,.45); }
+  .check.warn { border-color: rgba(242,181,68,.4); }
+  .steps { display: grid; gap: 8px; margin-top: 14px; }
+  .step { display: grid; grid-template-columns: 22px 1fr; gap: 9px; font-size: 13px;
+          padding: 8px 2px; border-top: 1px solid var(--line); }
+  .step .t { font-weight: 600; }
+  .step .d { color: var(--muted); }
+  .step.pending .t, .step.pending .d { color: var(--dim); }
+  .step.active .t { color: var(--wait); }
+
   .tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -16px; padding: 0 16px; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 560px; }
   th, td { text-align: right; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -60,7 +81,7 @@
   }
   input:focus, select:focus { outline: none; border-color: var(--accent-dim); }
   .row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .chip { padding: 7px 13px; border-radius: 20px; border: 1px solid var(--line);
           background: var(--panel-2); font-size: 13px; cursor: pointer; user-select: none; }
   .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
@@ -68,7 +89,7 @@
                padding: 12px 20px; font: inherit; font-weight: 650; cursor: pointer; }
   button.run:disabled { opacity: .5; cursor: default; }
   .bars { display: grid; gap: 7px; margin-top: 6px; }
-  .bar { display: grid; grid-template-columns: 82px 1fr 58px; align-items: center; gap: 10px; font-size: 12px; }
+  .bar { display: grid; grid-template-columns: 92px 1fr 58px; align-items: center; gap: 10px; font-size: 12px; }
   /* Both must be block: width has no effect on an inline element, which
      silently rendered every bar at zero. */
   .bar .track { display: block; height: 20px; background: var(--panel-2);
@@ -89,97 +110,102 @@
 <body>
 <header>
   <span class="dot" id="health-dot"></span>
-  <h1>Strategy Lab</h1>
+  <h1>Strateji Lab</h1>
   <span class="spacer"></span>
-  <span class="meta" id="header-meta">loading…</span>
+  <span class="meta" id="header-meta">yükleniyor…</span>
 </header>
 
 <main>
+  <section class="card" id="status-card">
+    <h2>Sistem durumu</h2>
+    <div id="status-body"><div class="empty">Kontrol ediliyor…</div></div>
+  </section>
+
   <section class="card">
-    <h2>Live coverage</h2>
+    <h2>Kapsam</h2>
     <div class="grid" id="stats"></div>
   </section>
 
   <section class="card">
-    <h2>Exit rule comparison</h2>
+    <h2>Çıkış kuralı karşılaştırması</h2>
     <p class="lede">
-      Identical signals, identical position size. The only thing that changes is when you sell —
-      and it changes the answer more than any filter does. Rules marked
-      <span class="tag look">hindsight</span> need to know the future peak, so they are a ceiling,
-      not a result you could have achieved.
+      Aynı sinyaller, aynı pozisyon boyutu. Değişen tek şey ne zaman sattığın — ve bu,
+      herhangi bir filtreden daha çok fark yaratıyor. <span class="tag look">geriye dönük</span>
+      işaretli kurallar zirveyi önceden bilmeyi gerektirir; bunlar bir tavandır,
+      elde edebileceğin bir sonuç değil.
     </p>
     <div class="tablewrap"><table id="compare">
-      <thead><tr><th>Exit rule</th><th>Signals</th><th>Win rate</th><th>Median</th><th>ROI</th><th>PnL</th></tr></thead>
+      <thead><tr><th>Çıkış kuralı</th><th>Sinyal</th><th>Kazanç oranı</th><th>Medyan</th><th>Getiri</th><th>Kâr/Zarar</th></tr></thead>
       <tbody></tbody>
     </table></div>
   </section>
 
   <section class="card">
-    <h2>Backtest your filter</h2>
-    <p class="lede">Net of swap fees, price impact at your position size, and gas.</p>
+    <h2>Kendi filtreni test et</h2>
+    <p class="lede">Swap ücreti, pozisyon boyutundaki fiyat etkisi ve gaz düşülmüş net sonuç.</p>
     <div class="row">
       <div>
-        <label for="window">Window</label>
+        <label for="window">Dönem</label>
         <select id="window">
-          <option value="7">7 days</option>
-          <option value="30" selected>30 days</option>
-          <option value="90">90 days</option>
+          <option value="7">Son 7 gün</option>
+          <option value="30" selected>Son 30 gün</option>
+          <option value="90">Son 90 gün</option>
         </select>
       </div>
       <div>
-        <label for="exit">Exit rule</label>
+        <label for="exit">Çıkış kuralı</label>
         <select id="exit"></select>
       </div>
       <div>
-        <label for="size">Position size (USD)</label>
+        <label for="size">İşlem başına ($)</label>
         <input id="size" type="number" value="100" min="1" step="10">
       </div>
       <div>
-        <label for="clusters">Min independent wallets</label>
+        <label for="clusters">Min bağımsız cüzdan</label>
         <input id="clusters" type="number" value="3" min="1" max="20">
       </div>
       <div>
-        <label for="maxmc">Max entry mcap (USD)</label>
-        <input id="maxmc" type="number" placeholder="any" min="0" step="10000">
+        <label for="maxmc">Max giriş market cap ($)</label>
+        <input id="maxmc" type="number" placeholder="sınırsız" min="0" step="10000">
       </div>
       <div>
-        <label for="minliq">Min liquidity (USD)</label>
-        <input id="minliq" type="number" placeholder="any" min="0" step="1000">
+        <label for="minliq">Min likidite ($)</label>
+        <input id="minliq" type="number" placeholder="sınırsız" min="0" step="1000">
       </div>
     </div>
     <div style="margin-top:14px">
-      <label>Chains</label>
+      <label>Zincirler</label>
       <div class="chips" id="chains"></div>
     </div>
     <div style="margin-top:14px" class="chips">
-      <span class="chip" id="safe-toggle" role="button" aria-pressed="false" tabindex="0">Exclude risky tokens</span>
-      <button class="run" id="run">Run backtest</button>
+      <span class="chip" id="safe-toggle" role="button" aria-pressed="false" tabindex="0">Riskli tokenleri ele</span>
+      <button class="run" id="run">Testi çalıştır</button>
     </div>
     <div id="result"></div>
   </section>
 
   <section class="card">
-    <h2>Strategy leaderboard</h2>
+    <h2>Strateji sıralaması</h2>
     <p class="lede" id="leader-note">
-      Ranked on realistic exits only, with returns shrunk toward zero in proportion to how few
-      signals back them. Read the out-of-sample column: a combination that leads in-sample and
-      collapses out of it is fitted to the past.
+      Yalnızca gerçekçi çıkışlarla sıralanıyor; getiriler, arkalarındaki sinyal sayısı azaldıkça
+      sıfıra doğru sönümleniyor. <b>Asıl bakılacak sütun "test dönemi"</b>: eğitim döneminde
+      lider olup test döneminde çöken bir kombinasyon geçmişe uydurulmuş demektir.
     </p>
     <div class="tablewrap"><table id="leaders">
       <thead><tr>
-        <th>Filter</th><th>Exit</th><th>Signals</th><th>Win rate</th><th>ROI</th>
-        <th>In-sample</th><th>Out-of-sample</th>
+        <th>Filtre</th><th>Çıkış</th><th>Sinyal</th><th>Kazanç oranı</th><th>Getiri</th>
+        <th>Eğitim dönemi</th><th>Test dönemi</th>
       </tr></thead>
       <tbody></tbody>
     </table></div>
   </section>
 
   <section class="card">
-    <h2>Recent signals</h2>
+    <h2>Son sinyaller</h2>
     <div class="tablewrap"><table id="signals">
       <thead><tr>
-        <th>Token</th><th>Chain</th><th>Wallets</th><th>MCAP</th><th>Liquidity</th>
-        <th>Safety</th><th>Peak</th><th>Now</th>
+        <th>Token</th><th>Zincir</th><th>Cüzdan</th><th>Market cap</th><th>Likidite</th>
+        <th>Güvenlik</th><th>Zirve</th><th>Şimdi</th>
       </tr></thead>
       <tbody></tbody>
     </table></div>
@@ -187,45 +213,112 @@
 </main>
 
 <footer>
-  Signals are data, not advice. Most tokens in this market end at zero — the outcome spread on
-  every backtest above shows exactly how often.
+  Sinyaller veridir, yatırım tavsiyesi değildir. Bu piyasadaki tokenlerin çoğu sıfırlanır —
+  her testin altındaki "sonuç dağılımı" bunun tam olarak ne sıklıkta olduğunu gösterir.
 </footer>
 
 <script>
 const $ = (s) => document.querySelector(s);
-const state = { chains: [], selectedChains: new Set(), safeOnly: false, exitModels: [] };
+const state = { chains: [], selectedChains: new Set(), safeOnly: false };
 
+// Turkish number conventions throughout: comma as the decimal separator, and
+// the percent sign before the number ("%22", not "22%").
+const dec = (n, d) => Number(n).toFixed(d).replace(".", ",");
 const fmtUsd = (v) => {
   if (v === null || v === undefined) return "—";
   const n = Number(v);
-  if (Math.abs(n) >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
-  if (Math.abs(n) >= 1e3) return "$" + (n / 1e3).toFixed(1) + "k";
-  return "$" + n.toFixed(0);
+  const sign = n < 0 ? "-" : "";
+  const a = Math.abs(n);
+  if (a >= 1e6) return sign + "$" + dec(a / 1e6, 2) + "M";
+  if (a >= 1e3) return sign + "$" + dec(a / 1e3, 1) + "B";
+  return sign + "$" + dec(a, 0);
 };
-const fmtPct = (v, digits = 1) =>
-  v === null || v === undefined ? "—" : (Number(v) * 100).toFixed(digits) + "%";
-const fmtRoi = (v) => (v === null || v === undefined ? "—" : (v >= 0 ? "+" : "") + Number(v).toFixed(1) + "%");
+const fmtPct = (v, d = 1) => (v === null || v === undefined ? "—" : "%" + dec(Number(v) * 100, d));
+const fmtRoi = (v) => (v === null || v === undefined ? "—" : (v >= 0 ? "+" : "-") + "%" + dec(Math.abs(Number(v)), 1));
+const fmtX = (v, d = 2) => (v === null || v === undefined ? "—" : dec(v, d) + "x");
+const fmtNum = (v) => Number(v ?? 0).toLocaleString("tr-TR");
 const cls = (v) => (v === null || v === undefined ? "" : Number(v) >= 0 ? "pos" : "neg");
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 async function api(path, options) {
   const res = await fetch(path, options);
-  if (!res.ok) throw new Error(path + " → " + res.status);
+  if (!res.ok) throw new Error(path + " → HTTP " + res.status);
   return res.json();
 }
 
 function ciText(ci, asPct) {
   if (!ci) return "";
   // Enough precision that a tight interval on a large sample reads as tight
-  // rather than as a broken "25% – 25%".
-  const f = asPct ? (v) => (v * 100).toFixed(1) + "%" : (v) => Number(v).toFixed(3) + "x";
-  return `<div class="ci">95% CI ${f(ci[0])} – ${f(ci[1])}</div>`;
+  // rather than as a broken "%25 – %25".
+  const f = asPct ? (v) => fmtPct(v, 1) : (v) => fmtX(v, 3);
+  return `<div class="ci">%95 aralık ${f(ci[0])} – ${f(ci[1])}</div>`;
 }
+
+// The API keeps filter and exit-model identifiers stable in English so the
+// payload stays machine-readable; display names are translated here.
+const EXIT_TR = {
+  tp_2x: "2x'te sat", tp_3x: "3x'te sat", tp_5x: "5x'te sat",
+  ladder: "kademeli sat", time_1h: "1 saat sonra sat", time_4h: "4 saat sonra sat",
+  time_24h: "24 saat sonra sat", hold_to_now: "hiç satma",
+  trail_35pct: "zirveden %35 düşünce sat", peak_50pct: "zirvenin yarısında sat",
+};
+const exitTr = (name) => EXIT_TR[name] || name;
+
+function filterTr(label) {
+  return label
+    .replace(/(\d+)w\+/g, "$1+ cüzdan")
+    .replace(/any MC/g, "MC sınırsız")
+    .replace(/MC (\S+)-(\S+)/g, (_, lo, hi) => `MC ${lo}-${hi}`.replace(/k/g, "b"))
+    .replace(/liq>(\S+)/g, (_, v) => "likidite>" + v.replace("k", "b"))
+    .replace(/age<(\d+)m/g, "yaş<$1dk")
+    .replace(/safe\+caution/g, "temiz+dikkat")
+    .replace(/all signals/g, "tüm sinyaller");
+}
+
+// --- system status ----------------------------------------------------
+
+const DOT_COLOR = { ok: "var(--accent)", waiting: "var(--wait)", warn: "var(--warn)", error: "var(--bad)" };
+
+async function loadStatus() {
+  let report;
+  try {
+    report = await api("/api/diagnostics");
+  } catch (err) {
+    $("#status-body").innerHTML =
+      `<div class="check error"><span>❌</span><div><div class="t">Sunucuya ulaşılamıyor</div>
+       <div class="d">Uygulama yanıt vermiyor. Railway'de servisin çalıştığını kontrol et. (${esc(err.message)})</div></div></div>`;
+    $("#health-dot").style.background = DOT_COLOR.error;
+    return null;
+  }
+
+  $("#health-dot").style.background = DOT_COLOR[report.worst_level] || "var(--dim)";
+
+  const checks = report.checks
+    .map((c) => `<div class="check ${esc(c.level)}"><span>${c.icon}</span>
+        <div><div class="t">${esc(c.title)}</div><div class="d">${esc(c.detail)}</div></div></div>`)
+    .join("");
+
+  const steps = report.progress
+    .map((s) => {
+      const mark = s.done ? "✅" : s.active ? "⏳" : "▫️";
+      const klass = s.done ? "done" : s.active ? "active" : "pending";
+      return `<div class="step ${klass}"><span>${mark}</span>
+              <div><span class="t">${esc(s.label)}</span> — <span class="d">${esc(s.detail)}</span></div></div>`;
+    })
+    .join("");
+
+  $("#status-body").innerHTML =
+    `<div class="headline"><span class="ic">${report.headline_icon}</span><span>${esc(report.headline)}</span></div>
+     <div class="checks">${checks}</div>
+     <div class="steps">${steps}</div>`;
+  return report;
+}
+
+// --- data sections ----------------------------------------------------
 
 async function loadMeta() {
   const meta = await api("/api/meta");
   state.chains = meta.chains;
-  state.exitModels = meta.exit_models;
 
   $("#chains").innerHTML = meta.chains
     .map((c) => `<span class="chip" role="button" tabindex="0" aria-pressed="true" data-chain="${esc(c.key)}">${esc(c.name)}${c.risk_data_available ? "" : " ⚠️"}</span>`)
@@ -243,128 +336,148 @@ async function loadMeta() {
   });
 
   $("#exit").innerHTML = meta.exit_models
-    .map((m) => `<option value="${esc(m.name)}"${m.name === "ladder" ? " selected" : ""}>${esc(m.name)}${m.uses_look_ahead ? " (hindsight)" : ""}</option>`)
+    .map((m) => `<option value="${esc(m.name)}"${m.name === "ladder" ? " selected" : ""}>${esc(exitTr(m.name))}${m.uses_look_ahead ? " (geriye dönük)" : ""}</option>`)
     .join("");
 }
 
 async function loadStats() {
   const s = await api("/api/stats");
   const cards = [
-    ["Signals", (s.signals_total ?? 0).toLocaleString(), `${s.signals_24h ?? 0} in the last 24h`],
-    ["Smart wallets", (s.smart_wallets ?? 0).toLocaleString(), `${s.watched_wallets ?? 0} on the watchlist`],
-    ["Trades indexed", (s.trades_total ?? 0).toLocaleString(), "wallet-centric indexing"],
-    ["Subscribers", (s.users ?? 0).toLocaleString(), "Telegram"],
+    ["Sinyal", fmtNum(s.signals_total), `son 24 saatte ${fmtNum(s.signals_24h)}`],
+    ["Akıllı cüzdan", fmtNum(s.smart_wallets), `${fmtNum(s.watched_wallets)} izleniyor`],
+    ["İşlem kaydı", fmtNum(s.trades_total), "cüzdan odaklı indeksleme"],
+    ["Abone", fmtNum(s.users), "Telegram"],
   ];
   $("#stats").innerHTML = cards
     .map(([k, v, sub]) => `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`)
     .join("");
   const last = s.last_signal_at ? new Date(s.last_signal_at) : null;
-  $("#header-meta").textContent = last ? "last signal " + last.toLocaleString() : "no signals yet";
+  $("#header-meta").textContent = last ? "son sinyal " + last.toLocaleString("tr-TR") : "henüz sinyal yok";
 }
 
 async function loadCompare() {
   const data = await api("/api/backtest/compare?window_days=60");
   const body = $("#compare tbody");
-  if (!data.results.length) { body.innerHTML = `<tr><td colspan="6" class="empty">No data yet.</td></tr>`; return; }
+  if (!data.results.length || !data.results[0].signals) {
+    body.innerHTML = `<tr><td colspan="6" class="empty">Henüz yeterli veri yok.</td></tr>`;
+    return;
+  }
   body.innerHTML = data.results
     .map((r) => `<tr>
-      <td>${esc(r.exit_model)} ${r.uses_look_ahead ? '<span class="tag look">hindsight</span>' : '<span class="tag real">realistic</span>'}</td>
-      <td>${r.signals.toLocaleString()}</td>
+      <td>${esc(exitTr(r.exit_model))} ${r.uses_look_ahead ? '<span class="tag look">geriye dönük</span>' : '<span class="tag real">gerçekçi</span>'}</td>
+      <td>${fmtNum(r.signals)}</td>
       <td>${fmtPct(r.win_rate)}</td>
-      <td>${r.median_net_multiple === null ? "—" : r.median_net_multiple.toFixed(2) + "x"}</td>
+      <td>${fmtX(r.median_net_multiple)}</td>
       <td class="${cls(r.roi_pct)}">${fmtRoi(r.roi_pct)}</td>
       <td class="${cls(r.total_pnl_usd)}">${fmtUsd(r.total_pnl_usd)}</td>
     </tr>`)
     .join("");
 }
 
+const BUCKET_TR = { "flat (<1x)": "zararda (<1x)", "1-2x": "1-2x", "2-5x": "2-5x", "5-10x": "5-10x", "10x+": "10x+" };
+
 function renderResult(r) {
   if (!r.signals) {
-    $("#result").innerHTML = `<div class="empty">No signals matched this filter.</div>`;
+    $("#result").innerHTML = `<div class="empty">Bu filtreye uyan sinyal yok.</div>`;
     return;
   }
   const total = Object.values(r.buckets).reduce((a, b) => a + b, 0) || 1;
   const bars = Object.entries(r.buckets)
     .map(([name, n]) => `<div class="bar">
-        <span class="muted">${esc(name)}</span>
+        <span class="muted">${esc(BUCKET_TR[name] || name)}</span>
         <span class="track"><span class="fill ${name.startsWith("flat") ? "loss" : ""}" style="width:${(100 * n / total).toFixed(1)}%"></span></span>
-        <span class="n">${n}</span>
+        <span class="n">${fmtNum(n)}</span>
       </div>`)
     .join("");
 
   const oos = r.out_of_sample
     ? `<div class="note ${r.out_of_sample.out_of_sample.roi_pct >= 0 ? "info" : ""}">
-         <b>Out-of-sample check.</b>
-         In-sample ROI ${fmtRoi(r.out_of_sample.in_sample.roi_pct)} on ${r.out_of_sample.in_sample.signals} signals →
-         out-of-sample ROI ${fmtRoi(r.out_of_sample.out_of_sample.roi_pct)} on ${r.out_of_sample.out_of_sample.signals} signals.
+         <b>Test dönemi kontrolü.</b>
+         Eğitim döneminde ${fmtRoi(r.out_of_sample.in_sample.roi_pct)} getiri
+         (${fmtNum(r.out_of_sample.in_sample.signals)} sinyal) →
+         test döneminde ${fmtRoi(r.out_of_sample.out_of_sample.roi_pct)}
+         (${fmtNum(r.out_of_sample.out_of_sample.signals)} sinyal).
        </div>`
     : "";
 
   $("#result").innerHTML = `
     <div class="grid" style="margin-top:16px">
-      <div class="stat"><div class="k">Signals</div><div class="v">${r.signals.toLocaleString()}</div>
-        <div class="s">${fmtPct(r.dead_share, 0)} of tokens died</div></div>
-      <div class="stat"><div class="k">Win rate</div><div class="v">${fmtPct(r.win_rate)}</div>
+      <div class="stat"><div class="k">Sinyal</div><div class="v">${fmtNum(r.signals)}</div>
+        <div class="s">tokenlerin ${fmtPct(r.dead_share, 0)} kadarı sıfırlandı</div></div>
+      <div class="stat"><div class="k">Kazanç oranı</div><div class="v">${fmtPct(r.win_rate)}</div>
         <div class="s">${ciText(r.win_rate_ci, true) || "—"}</div></div>
-      <div class="stat"><div class="k">Median</div><div class="v">${r.median_net_multiple.toFixed(2)}x</div>
-        <div class="s">${ciText(r.median_ci, false) || "net of costs"}</div></div>
-      <div class="stat"><div class="k">ROI</div><div class="v ${cls(r.roi_pct)}">${fmtRoi(r.roi_pct)}</div>
-        <div class="s">${fmtUsd(r.total_pnl_usd)} on ${fmtUsd(r.invested_usd)}</div></div>
-      <div class="stat"><div class="k">Round-trip cost</div>
-        <div class="v warnc">${r.median_round_trip_cost_pct === null ? "—" : r.median_round_trip_cost_pct.toFixed(1) + "%"}</div>
-        <div class="s">median, at your size</div></div>
+      <div class="stat"><div class="k">Medyan</div><div class="v">${fmtX(r.median_net_multiple)}</div>
+        <div class="s">${ciText(r.median_ci, false) || "maliyetler düşülmüş"}</div></div>
+      <div class="stat"><div class="k">Getiri</div><div class="v ${cls(r.roi_pct)}">${fmtRoi(r.roi_pct)}</div>
+        <div class="s">${fmtUsd(r.invested_usd)} yatırıma ${fmtUsd(r.total_pnl_usd)}</div></div>
+      <div class="stat"><div class="k">Gidiş-dönüş maliyet</div>
+        <div class="v warnc">${r.median_round_trip_cost_pct === null ? "—" : fmtPct(r.median_round_trip_cost_pct / 100, 1)}</div>
+        <div class="s">senin pozisyon boyutunda</div></div>
     </div>
-    <div style="margin-top:16px"><div class="k muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em">Outcome spread</div>
+    <div style="margin-top:16px"><div class="k muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em">Sonuç dağılımı</div>
       <div class="bars">${bars}</div></div>
     ${oos}
-    ${r.warnings.map((w) => `<div class="note">${esc(w)}</div>`).join("")}`;
+    ${r.warnings.map((w) => `<div class="note">${esc(translateWarning(w))}</div>`).join("")}`;
+}
+
+function translateWarning(w) {
+  if (w.startsWith("This exit model needs hindsight"))
+    return "Bu çıkış kuralı geleceği bilmeyi gerektiriyor (zirveyi). Bunu ulaşılabilir bir sonuç değil, bir tavan olarak oku.";
+  const m = w.match(/^Only (\d+) signals matched/);
+  if (m)
+    return `Sadece ${m[1]} sinyal eşleşti. Bu örneklem boyutunda güven aralığı onlarca puan geniştir — tek bir sayıya değil, aralığa bak.`;
+  if (w.startsWith("No signals matched")) return "Bu filtreye uyan sinyal yok.";
+  return w;
 }
 
 async function runBacktest() {
   const button = $("#run");
   button.disabled = true;
-  button.textContent = "Running…";
+  button.textContent = "Çalışıyor…";
   try {
     const num = (id) => { const v = $(id).value.trim(); return v === "" ? null : Number(v); };
-    const payload = {
-      window_days: Number($("#window").value),
-      chains: [...state.selectedChains],
-      min_clusters: num("#clusters"),
-      max_mcap_usd: num("#maxmc"),
-      min_liquidity_usd: num("#minliq"),
-      safe_only: state.safeOnly,
-      exit_model: $("#exit").value,
-      trade_size_usd: Number($("#size").value) || 100,
-    };
     renderResult(await api("/api/backtest", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        window_days: Number($("#window").value),
+        chains: [...state.selectedChains],
+        min_clusters: num("#clusters"),
+        max_mcap_usd: num("#maxmc"),
+        min_liquidity_usd: num("#minliq"),
+        safe_only: state.safeOnly,
+        exit_model: $("#exit").value,
+        trade_size_usd: Number($("#size").value) || 100,
+      }),
     }));
   } catch (err) {
-    $("#result").innerHTML = `<div class="note">Backtest failed: ${esc(err.message)}</div>`;
+    $("#result").innerHTML = `<div class="note">Test çalıştırılamadı: ${esc(err.message)}</div>`;
   } finally {
     button.disabled = false;
-    button.textContent = "Run backtest";
+    button.textContent = "Testi çalıştır";
   }
 }
 
 async function loadLeaders() {
   const body = $("#leaders tbody");
-  body.innerHTML = `<tr><td colspan="7" class="empty">Sweeping filter combinations…</td></tr>`;
+  body.innerHTML = `<tr><td colspan="7" class="empty">Filtre kombinasyonları taranıyor…</td></tr>`;
   const data = await api("/api/strategies/top?window_days=60&limit=10");
-  $("#leader-note").textContent =
-    `${data.combinations_tested} combinations tested. Ranked on realistic exits only, with returns ` +
-    `shrunk toward zero in proportion to how few signals back them. Read the out-of-sample column: ` +
-    `a combination that leads in-sample and collapses out of it is fitted to the past.`;
-  if (!data.strategies.length) { body.innerHTML = `<tr><td colspan="7" class="empty">Not enough signals yet.</td></tr>`; return; }
+  if (!data.strategies.length) {
+    body.innerHTML = `<tr><td colspan="7" class="empty">Sıralama için henüz yeterli sinyal yok.</td></tr>`;
+    return;
+  }
+  $("#leader-note").innerHTML =
+    `${fmtNum(data.combinations_tested)} kombinasyon test edildi. Yalnızca gerçekçi çıkışlarla sıralanıyor; ` +
+    `getiriler, arkalarındaki sinyal sayısı azaldıkça sıfıra doğru sönümleniyor. ` +
+    `<b>Asıl bakılacak sütun "test dönemi"</b>: eğitim döneminde lider olup test döneminde çöken ` +
+    `bir kombinasyon geçmişe uydurulmuş demektir.`;
   body.innerHTML = data.strategies
     .map((s) => {
       const o = s.out_of_sample;
       return `<tr>
-        <td>${esc(s.filter_label)}</td>
-        <td>${esc(s.exit_model)}</td>
-        <td>${s.signals}</td>
+        <td>${esc(filterTr(s.filter_label))}</td>
+        <td>${esc(exitTr(s.exit_model))}</td>
+        <td>${fmtNum(s.signals)}</td>
         <td>${fmtPct(s.win_rate)}${ciText(s.win_rate_ci, true)}</td>
         <td class="${cls(s.roi_pct)}">${fmtRoi(s.roi_pct)}</td>
         <td class="${o ? cls(o.in_sample.roi_pct) : ""}">${o ? fmtRoi(o.in_sample.roi_pct) : "—"}</td>
@@ -374,11 +487,16 @@ async function loadLeaders() {
     .join("");
 }
 
+const SAFETY_TR = { safe: "temiz", caution: "dikkat", danger: "riskli", unknown: "bilinmiyor" };
+
 async function loadSignals() {
   const data = await api("/api/signals?days=14&limit=40");
   const names = Object.fromEntries(state.chains.map((c) => [c.chain_id, c.name]));
   const body = $("#signals tbody");
-  if (!data.signals.length) { body.innerHTML = `<tr><td colspan="8" class="empty">No signals yet.</td></tr>`; return; }
+  if (!data.signals.length) {
+    body.innerHTML = `<tr><td colspan="8" class="empty">Henüz sinyal yok.</td></tr>`;
+    return;
+  }
   const safetyClass = { safe: "pos", caution: "warnc", danger: "neg" };
   body.innerHTML = data.signals
     .map((s) => `<tr>
@@ -387,9 +505,9 @@ async function loadSignals() {
       <td>${s.clusters}</td>
       <td>${fmtUsd(s.mcap_usd)}</td>
       <td>${fmtUsd(s.liquidity_usd)}</td>
-      <td class="${safetyClass[s.safety] || "muted"}">${esc(s.safety)}</td>
-      <td>${s.peak_multiple === null ? "—" : s.peak_multiple.toFixed(2) + "x"}</td>
-      <td class="${s.is_dead ? "neg" : ""}">${s.is_dead ? "dead" : s.current_multiple === null ? "—" : s.current_multiple.toFixed(2) + "x"}</td>
+      <td class="${safetyClass[s.safety] || "muted"}">${esc(SAFETY_TR[s.safety] || s.safety)}</td>
+      <td>${fmtX(s.peak_multiple)}</td>
+      <td class="${s.is_dead ? "neg" : ""}">${s.is_dead ? "sıfırlandı" : fmtX(s.current_multiple)}</td>
     </tr>`)
     .join("");
 }
@@ -404,15 +522,16 @@ safeChip.addEventListener("click", toggleSafe);
 safeChip.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSafe(); } });
 
 (async () => {
-  try {
-    await loadMeta();
-    await Promise.all([loadStats(), loadCompare(), loadSignals()]);
-    await runBacktest();
-    await loadLeaders();
-  } catch (err) {
-    $("#health-dot").style.background = "var(--bad)";
-    $("#header-meta").textContent = "error: " + err.message;
-  }
+  // Status first and on its own: if the database is unreachable every other
+  // section will fail, and the status card is what explains why.
+  const report = await loadStatus();
+  if (!report) return;
+
+  // Each section fails independently - one broken panel must not blank the page.
+  const settle = (p) => p.catch((e) => console.warn(e.message));
+  await Promise.all([settle(loadMeta()), settle(loadStats())]);
+  await Promise.all([settle(loadCompare()), settle(loadSignals()), settle(runBacktest())]);
+  await settle(loadLeaders());
 })();
 </script>
 </body>

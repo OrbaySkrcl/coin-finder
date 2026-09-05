@@ -28,9 +28,9 @@ USER app
 
 ENV PYTHONPATH=/app/src
 
-# Railway injects PORT; the api process reads it via API_PORT.
 EXPOSE 8000
 
-# Default to the API. railway.toml overrides the command for the worker and
-# bot services, which share this image.
-CMD ["sh", "-c", "python scripts/migrate.py && python -m uvicorn coinfinder.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Runs the API, the ingestion worker and the Telegram bot in one process, and
+# applies migrations on startup. Set RUN_COMPONENTS (api / worker / bot) to
+# split them across separate services later without changing this image.
+CMD ["python", "-m", "coinfinder"]

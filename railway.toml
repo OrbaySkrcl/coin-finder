@@ -1,30 +1,21 @@
-# Railway deploys three services from this one image.
+# One service runs everything: API + dashboard, ingestion worker, and the
+# Telegram bot. Splitting them is better at scale, but it triples the setup
+# and every extra step is somewhere a mistake can hide.
 #
-#   api     - HTTP API + Strategy Lab dashboard (this file's default)
-#   worker  - ingestion, scoring, signal engine, outcome tracking
-#   bot     - Telegram bot and alert dispatch
+# To split later, set RUN_COMPONENTS on each service (api / worker / bot).
+# No code changes are needed.
 #
-# Add the PostgreSQL and Redis plugins, then set the shared variables once at
-# the project level so all three services inherit them.
+# Required: attach the PostgreSQL plugin, then set
+#   DATABASE_URL       = ${{Postgres.DATABASE_URL}}
+#   TELEGRAM_BOT_TOKEN = <token from @BotFather>
 
 [build]
 builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python scripts/migrate.py && python -m uvicorn coinfinder.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+startCommand = "python -m coinfinder"
 healthcheckPath = "/health"
-healthcheckTimeout = 120
+healthcheckTimeout = 180
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
-
-# --- copy these into the matching Railway services -----------------------
-#
-# [worker]
-# startCommand = "python -m coinfinder.worker.main"
-#
-# [bot]
-# startCommand = "python -m coinfinder.bot.main"
-#
-# Only the api service needs a public domain. The worker and bot make
-# outbound connections only, so leave them private.

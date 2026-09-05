@@ -259,3 +259,55 @@ Pozisyon boyutunun en iyi gerçekçi stratejiye etkisi:
   DexScreener / GeckoTerminal / tüm public RPC'leri 403 ile kapatıyor
   (bkz. `lessons.md`). Parsing fixture'larla test edildi; **canlı uyumluluk
   Railway'de ilk deploy sonrası `/api/stats` ile doğrulanmalı.**
+
+---
+
+## 5. Faz 11 — Kod bilmeyen kullanıcı için uyarlama
+
+**Sorun:** Sistem geliştirici varsayımıyla kuruldu. Kullanıcı kodlama bilmiyor.
+Rehber yazmak yetmez; şu üç şey terminal gerektiriyordu:
+
+1. Üç ayrı Railway servisi kurmak (üç farklı başlangıç komutu)
+2. `railway run python scripts/smoke_check.py` ile teşhis
+3. `curl /api/stats` ile sağlık kontrolü, log okuyarak sorun bulma
+
+**Çözüm:** Terminali tamamen devre dışı bırak. Kullanıcının tek arayüzü
+Telegram + web paneli olsun.
+
+- [x] Hepsi-bir-arada çalıştırma modu (`python -m coinfinder`) → Railway'de
+      üç servis yerine **tek servis**, tek tıkla deploy
+- [x] Ortak teşhis modülü (`diagnostics.py`) — API ve bot aynı kodu kullansın
+- [x] `/api/diagnostics` endpoint'i + panelde "Sistem Durumu" kartı
+      (sade Türkçe: "✅ Base bağlı", "⏳ Cüzdan aranıyor, ~2 gün")
+- [x] Telegram `/durum` komutu — teşhisi sohbette, sade dille göster
+- [x] Isınma ilerlemesi göstergesi — "neden hâlâ sinyal yok?" sorusunu cevaplasın
+- [x] `docs/BASLANGIC.md` — tıkla-adım-adım, terminal komutu içermeyen rehber
+- [x] `docs/KULLANIM.md` — günlük kullanım: alert nasıl okunur, filtreler,
+      Strategy Lab nasıl yorumlanır
+
+### Faz 11 sonucu
+
+Terminal gerekliliği tamamen kaldırıldı. Kullanıcının tek arayüzü Telegram + panel.
+
+**Yapılan:**
+- Tek servis (`python -m coinfinder`) — Railway'de üç yerine bir deployment
+- Sade Türkçe teşhis: `/durum` komutu ve panelin en üstündeki sistem kartı
+- Panel tamamen Türkçeleştirildi (sayı biçimleri dahil: `%24,9`, `$102,2B`)
+- Filtre ve çıkış kuralı etiketleri çevrildi (`4+ cüzdan / MC 0-500b`, `4 saat sonra sat`)
+- `docs/BASLANGIC.md` — tıkla-adım-adım kurulum, tek satır komut yok
+- `docs/KULLANIM.md` — alert nasıl okunur, filtreler, Strateji Lab yorumu
+
+**Bu fazda bulunan gerçek hatalar:**
+
+8. **Token yokken tüm sistem kapanıyordu.** `run_bot` token bulamayınca dönüyordu,
+   süpervizör bunu "bir bileşen öldü" sayıp süreci kapatıyordu. Railway'de bu,
+   kullanıcının hiçbir açıklama göremediği sonsuz yeniden başlatma döngüsü demekti —
+   tam da önlemeye çalıştığım senaryo. Devre dışı bileşen artık çıkmıyor, bekliyor.
+9. **Veritabanı erişilemezse uygulama çöküyordu.** Artık 6 kez geri çekilerek deneniyor,
+   sonra API yine de açılıp sorunu sade dille anlatan teşhis sayfasını sunuyor.
+10. **`/health` bozuk modda 503 dönüyordu.** Railway bunu görüp servisi sürekli yeniden
+    başlatırdı ve kullanıcı teşhis sayfasını hiç göremezdi. Sağlık kontrolü artık
+    canlılık bildiriyor; gerçek durum `/api/diagnostics`'te.
+11. **İlerleme göstergesi tutarsızdı.** Tamamlanmış adımların *arkasında* kalan boş bir
+    adım "X bulununca başlar" diyordu — sonraki adımlar zaten bitmişken bu arıza gibi
+    okunuyordu.

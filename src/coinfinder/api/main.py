@@ -16,11 +16,11 @@ from typing import Any
 
 import structlog
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from coinfinder import db, repo
+from coinfinder import db, diagnostics, repo
 from coinfinder.api.grid import default_grid
 from coinfinder.backtest.costs import CostModel
 from coinfinder.backtest.engine import FilterSpec, run, search, to_frame
@@ -36,9 +36,17 @@ WEB_DIR = pathlib.Path(__file__).resolve().parents[3] / "web"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    await db.init_pool(max_size=6)
-    await db.migrate()
-    log.info("api.started")
+    try:
+        await db.init_pool(max_size=6)
+        await db.migrate()
+    except Exception as exc:
+        # Start anyway. A running app that explains "database unreachable" is
+        # far more useful to a non-technical operator than a restart loop that
+        # explains nothing - and /api/diagnostics is designed to say exactly
+        # which setting is wrong.
+        log.error("api.started_degraded", error=str(exc)[:200])
+    else:
+        log.info("api.started")
     yield
     await db.close_pool()
 
@@ -78,10 +86,24 @@ class BacktestRequest(BaseModel):
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
+    """Liveness, not correctness.
+
+    Deliberately returns 200 even when the database is unreachable. The
+    platform restarts a service whose health check fails, and that restart
+    loop would stop the operator ever seeing the diagnostics page naming the
+    setting they need to fix. Real state lives at /api/diagnostics and in the
+    dashboard's status card, both of which say so loudly.
+    """
     try:
         await db.fetchval("SELECT 1")
     except Exception as exc:
-        return JSONResponse({"status": "degraded", "error": str(exc)}, status_code=503)  # type: ignore[return-value]
+        return {
+            "status": "degraded",
+            "database": "unreachable",
+            "detail": str(exc)[:200],
+            "see": "/api/diagnostics",
+            "time": datetime.now(UTC).isoformat(),
+        }
     return {"status": "ok", "time": datetime.now(UTC).isoformat()}
 
 
@@ -103,6 +125,20 @@ async def meta() -> dict[str, Any]:
             {"name": m.name, "uses_look_ahead": m.uses_look_ahead} for m in DEFAULT_MODELS
         ],
     }
+
+
+@app.get("/api/diagnostics")
+async def diagnostics_endpoint(
+    network: bool = Query(default=True, description="Also probe RPC and DexScreener"),
+) -> dict[str, Any]:
+    """Plain-language system status.
+
+    This is the page a non-technical operator opens instead of reading logs,
+    so it answers "is it broken, what is it doing, when do signals start"
+    rather than dumping counters.
+    """
+    report = await diagnostics.run(include_network=network)
+    return report.to_dict()
 
 
 @app.get("/api/stats")
