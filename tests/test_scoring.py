@@ -117,7 +117,7 @@ def test_recent_performance_outranks_identical_stale_performance():
 
 def test_one_huge_win_saturates_instead_of_exploding_the_score():
     modest = good_trader("0xwhale", n=12)
-    whale = modest + [rt("0xwhale", "0xmoon", 100, 5_000_000)]
+    whale = [*modest, rt("0xwhale", "0xmoon", 100, 5_000_000)]
     a = score_wallet("0xwhale", whale, now=NOW)
     b = score_wallet("0xwhale", modest, now=NOW)
     assert a.is_smart and b.is_smart
