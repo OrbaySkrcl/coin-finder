@@ -390,3 +390,51 @@ def test_run_can_skip_intervals():
     full = run(rows, spec=FilterSpec(), exit_model=HoldToNow(), with_intervals=True)
     assert fast.win_rate_ci is None and full.win_rate_ci is not None
     assert fast.win_rate == full.win_rate
+
+
+# --- bootstrap ---------------------------------------------------------
+
+
+def test_bootstrap_resamples_with_replacement_at_every_sample_size():
+    """Regression for a silent zero-width confidence interval.
+
+    A hand-rolled LCG using ``state % n`` produced a permutation rather than a
+    resample whenever n was a power of two, so the bootstrap became a no-op and
+    reported perfect certainty. Powers of two are exactly the sizes a synthetic
+    dataset is likely to have, so this hid easily.
+    """
+    from coinfinder.backtest.engine import _bootstrap_ci
+
+    for n in (64, 100, 512, 997, 1024):
+        # Half the sample at 0.5x and half at 4x: any honest resample of this
+        # has a genuinely uncertain median and win rate.
+        values = [0.5 if i % 2 else 4.0 for i in range(n)]
+        win_ci = _bootstrap_ci(values, "win_rate")
+        assert win_ci is not None, n
+        assert win_ci[1] > win_ci[0], f"zero-width win-rate interval at n={n}"
+        assert win_ci[0] <= 0.5 <= win_ci[1], n
+
+
+def test_bootstrap_interval_narrows_as_the_sample_grows():
+    from coinfinder.backtest.engine import _bootstrap_ci
+
+    def width(n: int) -> float:
+        ci = _bootstrap_ci([0.5 if i % 2 else 4.0 for i in range(n)], "win_rate")
+        assert ci is not None
+        return ci[1] - ci[0]
+
+    assert width(50) > width(500) > width(2000) > 0
+
+
+def test_bootstrap_is_deterministic():
+    from coinfinder.backtest.engine import _bootstrap_ci
+
+    values = [0.5 if i % 3 else 3.0 for i in range(200)]
+    assert _bootstrap_ci(values, "median") == _bootstrap_ci(values, "median")
+
+
+def test_bootstrap_declines_on_tiny_samples():
+    from coinfinder.backtest.engine import _bootstrap_ci
+
+    assert _bootstrap_ci([1.0] * 11, "median") is None
+    assert _bootstrap_ci([1.0] * 12, "median") is not None

@@ -17,6 +17,7 @@ What it reports that the reference product does not:
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any
@@ -314,14 +315,22 @@ def apply_costs(df: pl.DataFrame, *, size_usd: float, cost: CostModel) -> pl.Dat
 def _bootstrap_ci(
     values: list[float], statistic: str, *, iterations: int = 400, seed: int = 12345
 ) -> tuple[float, float] | None:
-    """Percentile bootstrap interval. Returns None when the sample is too small."""
+    """Percentile bootstrap interval. Returns None when the sample is too small.
+
+    Uses ``random.Random``, which is a Mersenne Twister and is deterministic
+    given the seed. A hand-rolled linear congruential generator was tried first
+    and was silently wrong: ``state % n`` for a power-of-two ``n`` walks the
+    indices as a permutation, so every "resample" reproduced the original
+    sample exactly and the interval collapsed to zero width. Reporting false
+    certainty is the one failure mode this whole module exists to prevent.
+    """
     n = len(values)
     if n < 12:
         return None
-    rng = _Rng(seed)
+    rng = random.Random(seed)
     stats: list[float] = []
     for _ in range(iterations):
-        sample = [values[rng.below(n)] for _ in range(n)]
+        sample = rng.choices(values, k=n)
         if statistic == "median":
             sample.sort()
             stats.append(sample[n // 2] if n % 2 else (sample[n // 2 - 1] + sample[n // 2]) / 2.0)
@@ -329,17 +338,6 @@ def _bootstrap_ci(
             stats.append(sum(1 for v in sample if v > 1.0) / n)
     stats.sort()
     return round(stats[int(0.025 * iterations)], 4), round(stats[int(0.975 * iterations) - 1], 4)
-
-
-class _Rng:
-    """Deterministic LCG so identical inputs always give identical intervals."""
-
-    def __init__(self, seed: int) -> None:
-        self._state = seed & 0xFFFFFFFF
-
-    def below(self, n: int) -> int:
-        self._state = (1664525 * self._state + 1013904223) & 0xFFFFFFFF
-        return self._state % n
 
 
 def bucket_counts(multiples: list[float]) -> dict[str, int]:

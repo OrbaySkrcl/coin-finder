@@ -84,58 +84,58 @@ kazandırdığını dürüstçe ölçmesinde.**
 ## 2. Yapılacaklar (Checklist)
 
 ### Faz 0 — İskelet & altyapı
-- [ ] `uv` tabanlı Python paket yapısı (`src/coinfinder/...`), pyproject, ruff + mypy
-- [ ] Postgres şeması + Alembic migration'ları
-- [ ] Config katmanı (pydantic-settings, tüm sırlar env'den)
-- [ ] Docker + `railway.toml` (api / worker / bot servisleri)
-- [ ] GitHub Actions: ruff, mypy, pytest
-- [ ] `docker-compose.yml` ile yerel Postgres+Redis
+- [x] `uv` tabanlı Python paket yapısı (`src/coinfinder/...`), pyproject, ruff + mypy
+- [x] Postgres şeması + Alembic migration'ları
+- [x] Config katmanı (pydantic-settings, tüm sırlar env'den)
+- [x] Docker + `railway.toml` (api / worker / bot servisleri)
+- [x] GitHub Actions: ruff, mypy, pytest
+- [x] `docker-compose.yml` ile yerel Postgres+Redis
 
 ### Faz 1 — Veri katmanı
-- [ ] DexScreener client (rate-limit'li, retry'lı, circuit breaker)
-- [ ] GeckoTerminal client (DexScreener fallback + OHLCV backfill)
-- [ ] Token/pool metadata cache (Redis + Postgres)
-- [ ] Fiyat snapshot yazıcı (sinyal anındaki durumu dondurmak için — **look-ahead önleme**)
+- [x] DexScreener client (rate-limit'li, retry'lı, circuit breaker)
+- [x] GeckoTerminal client (DexScreener fallback + OHLCV backfill)
+- [x] Token/pool metadata cache (Redis + Postgres)
+- [x] Fiyat snapshot yazıcı (sinyal anındaki durumu dondurmak için — **look-ahead önleme**)
 
 ### Faz 2 — On-chain ingestion
-- [ ] EVM log indexer: Uniswap V2/V3/V4 + Aerodrome + PancakeSwap `Swap` event'leri
-- [ ] Reorg-safe checkpoint (N blok confirmation + rollback)
-- [ ] Swap → (wallet, token, yön, miktar, USD) normalizasyonu
-- [ ] Router/aggregator/MEV bot adres filtresi (1inch, 0x, Banana, Maestro, jaredfromsubway...)
+- [x] EVM log indexer: Uniswap V2/V3/V4 + Aerodrome + PancakeSwap `Swap` event'leri
+- [x] Reorg-safe checkpoint (N blok confirmation + rollback)
+- [x] Swap → (wallet, token, yön, miktar, USD) normalizasyonu
+- [x] Router/aggregator/MEV bot adres filtresi (1inch, 0x, Banana, Maestro, jaredfromsubway...)
 - [ ] Solana ingestion (Helius webhook/gRPC) — *chain kararına bağlı*
 
 ### Faz 3 — Smart wallet keşfi & skorlama
-- [ ] FIFO realized-PnL hesaplayıcı (kısmi çıkışlar, çoklu giriş)
-- [ ] Cüzdan metrikleri: win-rate, medyan çarpan, PnL, işlem sayısı, aktif gün, avg hold
-- [ ] Bot/sniper eleme (aynı blokta giriş, >X tx/gün, aynı-nonce paterni)
-- [ ] **Sybil/cluster tespiti**: ortak fonlama kaynağı → tek varlık say (sahte konfluansı öldürür)
-- [ ] Zaman ağırlıklı skor (yarı ömür ~30 gün) + minimum örneklem eşiği
-- [ ] Gün sonu yeniden skorlama cron'u
+- [x] FIFO realized-PnL hesaplayıcı (kısmi çıkışlar, çoklu giriş)
+- [x] Cüzdan metrikleri: win-rate, medyan çarpan, PnL, işlem sayısı, aktif gün, avg hold
+- [x] Bot/sniper eleme (aynı blokta giriş, >X tx/gün, aynı-nonce paterni)
+- [x] **Sybil/cluster tespiti**: ortak fonlama kaynağı → tek varlık say (sahte konfluansı öldürür)
+- [x] Zaman ağırlıklı skor (yarı ömür ~30 gün) + minimum örneklem eşiği
+- [x] Gün sonu yeniden skorlama cron'u
 
 ### Faz 4 — Sinyal motoru
-- [ ] Konfluans dedektörü: ≥K farklı *cluster* W penceresinde alım
-- [ ] Güvenlik ön-filtresi: honeypot simülasyonu (`eth_call`), buy/sell tax, LP kilit/burn,
+- [x] Konfluans dedektörü: ≥K farklı *cluster* W penceresinde alım
+- [x] Güvenlik ön-filtresi: honeypot simülasyonu (`eth_call`), buy/sell tax, LP kilit/burn,
       top-holder yoğunlaşması, deployer geçmişi (daha önce rug çekmiş mi)
-- [ ] Kalite skoru: **kalibre edilmiş lojistik model** → P(≥2×) — yıldız değil, olasılık
-- [ ] Dedupe + cooldown (aynı token için tekrar alert kuralları)
-- [ ] Sinyal snapshot'ı immutable yaz (mcap, likidite, yaş, fiyat, holder, tax — o anki hâli)
+- [x] Kalite skoru: **kalibre edilmiş lojistik model** → P(≥2×) — yıldız değil, olasılık
+- [x] Dedupe + cooldown (aynı token için tekrar alert kuralları)
+- [x] Sinyal snapshot'ı immutable yaz (mcap, likidite, yaş, fiyat, holder, tax — o anki hâli)
 
 ### Faz 5 — Telegram bot
-- [ ] Webhook modu + aiogram router yapısı
-- [ ] Alert şablonu (mcap/liq/yaş/tax/kalite/CA + Trojan/Maestro/GMGN deep-link'leri)
-- [ ] Kullanıcı filtre profilleri (chain, min cüzdan, mcap aralığı, min likidite, max yaş)
-- [ ] `/stats` — kullanıcının kendi filtresinin son 30 gün gerçek performansı
-- [ ] Rate limit + mesaj gruplama (spam koruması)
+- [x] Webhook modu + aiogram router yapısı
+- [x] Alert şablonu (mcap/liq/yaş/tax/kalite/CA + Trojan/Maestro/GMGN deep-link'leri)
+- [x] Kullanıcı filtre profilleri (chain, min cüzdan, mcap aralığı, min likidite, max yaş)
+- [x] `/stats` — kullanıcının kendi filtresinin son 30 gün gerçek performansı
+- [x] Rate limit + mesaj gruplama (spam koruması)
 
 ### Faz 6 — Strategy Lab (asıl fark yaratan kısım)
-- [ ] Backtest motoru (Polars): filtre kombosu × çıkış modeli → PnL dağılımı
-- [ ] **Maliyet modeli**: gaz + DEX fee + likidite derinliğine göre slippage + buy/sell tax
-- [ ] Çıkış modelleri: sabit TP merdiveni, trailing stop, süre bazlı, hold-to-now (reality check),
+- [x] Backtest motoru (Polars): filtre kombosu × çıkış modeli → PnL dağılımı
+- [x] **Maliyet modeli**: gaz + DEX fee + likidite derinliğine göre slippage + buy/sell tax
+- [x] Çıkış modelleri: sabit TP merdiveni, trailing stop, süre bazlı, hold-to-now (reality check),
       ve *ayrı işaretlenmiş* peak-based (look-ahead uyarısıyla)
-- [ ] Survivorship raporu: delist/rug olan tokenleri **0 olarak** dahil et
-- [ ] Bootstrap güven aralığı (medyan ve win-rate için) — tek sayı yerine aralık
-- [ ] Overfit uyarısı: en iyi 10 komboyu out-of-sample dilimde de göster
-- [ ] FastAPI endpoint'leri + Vite/React panel (mobil öncelikli, screenshot'lardaki gibi)
+- [x] Survivorship raporu: delist/rug olan tokenleri **0 olarak** dahil et
+- [x] Bootstrap güven aralığı (medyan ve win-rate için) — tek sayı yerine aralık
+- [x] Overfit uyarısı: en iyi 10 komboyu out-of-sample dilimde de göster
+- [x] FastAPI endpoint'leri + Vite/React panel (mobil öncelikli, screenshot'lardaki gibi)
 
 ### Faz 7 — Paper trading / forward test
 - [ ] Her sinyal için sanal pozisyon aç, sabit kurallarla kapat, günlük mark-to-market
@@ -153,7 +153,7 @@ kazandırdığını dürüstçe ölçmesinde.**
 - [ ] Simülasyon-önce-gönder (`eth_call`), slippage koruması, private mempool (MEV koruması)
 
 ### Faz 10 — Operasyon
-- [ ] Structured logging + Sentry
+- [x] Structured logging + Sentry
 - [ ] Sağlık metrikleri: ingestion gecikmesi, sinyal→alert latency, RPC hata oranı
 - [ ] Alarm: veri akışı durursa Telegram'dan admin'e bildirim
 
@@ -179,4 +179,83 @@ kazandırdığını dürüstçe ölçmesinde.**
 
 ## 4. Review / Sonuçlar
 
-*(Uygulama ilerledikçe doldurulacak.)*
+### Teslim edilen
+
+Çalışan, deploy edilebilir bir sistem: **41 kaynak dosya, 171 test, ruff + mypy temiz.**
+
+| Katman | Durum |
+|---|---|
+| Chain registry (Base/Robinhood/BSC) | ✅ saf veri; zincir eklemek ingestion koduna dokunmuyor |
+| RPC havuzu | ✅ rotasyon, token-bucket, 429 cooldown, adaptif blok aralığı |
+| Cüzdan-merkezli indeksleme | ✅ ücretsiz katmanı mümkün kılan topic-filter yaklaşımı |
+| İşlem çıkarımı | ✅ native ETH alımı, router'daki quote leg, LP mint/burn, ERC721 — 15 test |
+| FIFO PnL + skorlama | ✅ shrinkage, zaman sönümü, bot eleme — 30 test |
+| Sybil kümeleme | ✅ co-buy zamanlamasından; ekstra RPC maliyeti yok |
+| Sinyal motoru + güvenlik | ✅ 25 test |
+| Backtest (Strategy Lab) | ✅ maliyet modeli, look-ahead etiketleme, OOS bölme, bootstrap CI |
+| Telegram bot | ✅ filtreler, alert, /stats |
+| API + panel | ✅ headless tarayıcıda doğrulandı, sıfır konsol hatası |
+| Deploy (Railway) | ✅ Dockerfile + railway.toml + CI |
+
+### Doğrulama sırasında bulunan ve düzeltilen gerçek hatalar
+
+Bunlar teoride değil, sistemi çalıştırırken çıktı:
+
+1. **`upsert_wallets` çöküyordu** — bir cüzdan tek tarama penceresinde 2+ işlem
+   yaptığında (normal durum) `ON CONFLICT DO UPDATE` aynı satıra iki kez dokunuyor
+   ve `CardinalityViolation` fırlatıyordu. **Tüm ingestion yazımı düşerdi.**
+2. **Sonuç takibi SQL'i reddediliyordu** — Postgres aynı parametre için `> 0`'dan
+   integer, bölmeden double çıkarımı yapıp belirsizlik hatası veriyordu.
+   **Hiçbir sinyal sonucu kaydedilemezdi.**
+3. **Bot-frekans filtresi meşru cüzdanları eliyordu** — gözlem aralığı `.days` ile
+   tam sayıya yuvarlanıyordu; tek bir öğleden sonra aktif olan cüzdan "günde 60
+   işlem yapan bot" görünüyordu.
+4. **Strateji taraması 28.5 saniye sürüyordu** — 576 kombonun hepsi için bootstrap
+   hesaplanıyordu. Artık sadece döndürülen sonuçlar için: **4.6 saniye.**
+5. **Liderlik tablosu ezberlenmiş stratejileri ödüllendiriyordu** — ham ROI'ye göre
+   sıralama ilk 4 sırayı n=30'luk örneklemlere veriyordu ve hepsi out-of-sample'da
+   çöküyordu (+%194 → −%29). Artık kanıt miktarına göre sönümlenmiş ROI ile
+   sıralanıyor; ilk 10'un tamamı n≥87 ve OOS'ta pozitif.
+6. **Dağılım çubukları hiç çizilmiyordu** — track ve fill inline `<span>`'di ve
+   inline elemanlarda `width` uygulanmaz. Markup okuyarak değil, headless
+   Chromium'da kutu ölçerek bulundu.
+7. **Kullanılamaz likidite 0 yerine 0.0001× dönüyordu** — %99 sürtünme tavanı
+   sızdırıyordu; her toplamda rug'ları olduğundan iyi gösterirdi.
+
+### Referans sistemle karşılaştırma
+
+Sentetik popülasyon, onların *kendi yayınladıkları* dağılıma kalibre edildi.
+Kalibrasyon kontrolü: hold-to-now kazanç oranımız **%18.6**, onların yayınladığı
+**%18.8** — popülasyon şekli doğru yeniden üretilmiş.
+
+| Çıkış kuralı | Hindsight? | ROI |
+|---|---|---|
+| `peak_50pct` (onların manşet modeli) | **evet** | **+%80.8** (onlar: +%82.5) |
+| `time_24h` | hayır | +%79.6 |
+| `hold_to_now` | hayır | +%67.5 |
+| `tp_2x` | hayır | **−%46.0** |
+
+Aynı sinyaller, aynı pozisyon boyutu. Fark tamamen çıkış kuralında.
+
+Pozisyon boyutunun en iyi gerçekçi stratejiye etkisi:
+
+| Boyut | ROI |
+|---|---|
+| $100 | +%79.6 |
+| $500 | +%44.9 |
+| $2.000 | **−%1.8** |
+| $10.000 | **−%54.9** |
+
+### Yapılmayanlar (bilinçli, kapsam kararı)
+
+- **Faz 8 — abonelik/ödeme:** v1 kapsamı dışı. `users` tablosunda trial/plan
+  alanları hazır ama HD deposit adresi türetme yazılmadı.
+- **Faz 9 — otomatik alım:** senin kararınla kapsam dışı. Kodun hiçbir yerinde
+  private key tutulmuyor; custody yok.
+- **Paper trading döngüsü:** `paper_positions` tablosu şemada var, forward-test
+  döngüsü yazılmadı.
+- **Solana:** EVM dışı olduğu için kapsam dışı bırakıldı.
+- **Canlı API doğrulaması:** bu geliştirme ortamının egress politikası
+  DexScreener / GeckoTerminal / tüm public RPC'leri 403 ile kapatıyor
+  (bkz. `lessons.md`). Parsing fixture'larla test edildi; **canlı uyumluluk
+  Railway'de ilk deploy sonrası `/api/stats` ile doğrulanmalı.**

@@ -216,7 +216,9 @@ async function api(path, options) {
 
 function ciText(ci, asPct) {
   if (!ci) return "";
-  const f = asPct ? (v) => (v * 100).toFixed(0) + "%" : (v) => Number(v).toFixed(2) + "x";
+  // Enough precision that a tight interval on a large sample reads as tight
+  // rather than as a broken "25% – 25%".
+  const f = asPct ? (v) => (v * 100).toFixed(1) + "%" : (v) => Number(v).toFixed(3) + "x";
   return `<div class="ci">95% CI ${f(ci[0])} – ${f(ci[1])}</div>`;
 }
 
