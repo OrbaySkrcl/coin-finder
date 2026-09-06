@@ -266,6 +266,27 @@ bunları sessizce düşürür ve sonuçlar olduğundan iyi görünür.
 
 Panel adresini tarayıcıda açın. Beş bölüm var:
 
+### Panel ile Telegram ilişkisi
+
+İkisi **aynı veritabanını okur** — panelde gördüğün sinyaller botun ürettiği
+sinyallerdir, gecikme yoktur.
+
+Ama **ayarlar ortak değil**:
+
+| | Nerede ayarlanır | Ne yapar |
+|---|---|---|
+| Bildirim ayarların | Telegram `/ayarlar` | Sana hangi sinyallerin *gönderileceğini* belirler |
+| Paneldeki test formu | Panel | Sadece o anki testi çalıştırır, hiçbir şeyi kaydetmez |
+
+Panelde form değiştirmek Telegram bildirimlerini **etkilemez**. Panel giriş
+istemediği için kimin olduğunu bilmiyor; bir web sayfasının senin bildirim
+ayarlarını değiştirebilmesi de istenmez.
+
+Aradaki köprü tek yönlü: Telegram'da `/ayarlar` yazınca en altta
+**"🔬 Bu ayarları Strateji Lab'da test et"** bağlantısı çıkar. Ona basarsan
+panel senin ayarlarınla dolu açılır. Orada denediğin değişikliği beğenirsen
+Telegram'a dönüp aynı ayarı elle yaparsın.
+
 ### Sistem durumu
 En üstte. Her şeyin yolunda olup olmadığı. Günde bir bakmanız yeterli.
 

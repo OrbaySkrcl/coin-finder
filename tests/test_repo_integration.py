@@ -468,3 +468,103 @@ async def test_recipients_carry_each_users_own_sizing():
     assert float(by_id[1]["max_cost_pct"]) == 2.0
     assert float(by_id[2]["trade_size_usd"]) == 250.0
     assert by_id[2]["max_cost_pct"] is None
+
+
+# --- watchlist bootstrap -----------------------------------------------
+
+
+async def test_discovery_deadlock_regression():
+    """Candidates must be watched the moment they are discovered.
+
+    Recording them unwatched deadlocked the entire system: the watcher only
+    reads wallets with watch_since set, so no trades were recorded, so scoring
+    had nothing to rank, so the watchlist was never written - and round it
+    went. In production this showed as "52 wallets found, 0 watched, 0 trades"
+    that would never have advanced.
+    """
+    candidates = [f"0x{i:040x}" for i in range(52)]
+    await repo.watch_candidates(CHAIN, candidates, budget=400)
+    assert len(await repo.watched_wallets(CHAIN)) == 52
+
+
+async def test_watch_budget_caps_the_wallet_count():
+    # Watching costs RPC quota in proportion to the wallet count, so the list
+    # cannot be allowed to grow with every discovery run.
+    await repo.watch_candidates(CHAIN, [f"0x{i:040x}" for i in range(600)], budget=400)
+    assert len(await repo.watched_wallets(CHAIN)) == 400
+
+
+async def test_budget_keeps_smart_wallets_over_fresh_candidates():
+    smart, plain = "0x" + "11" * 20, "0x" + "22" * 20
+    await repo.watch_candidates(CHAIN, [smart, plain], budget=2)
+    await repo.upsert_scores(
+        CHAIN,
+        [
+            {
+                "wallet": smart,
+                "window_days": 90,
+                "closed_trades": 20,
+                "wins": 12,
+                "score": 80.0,
+                "is_smart": True,
+            }
+        ],
+    )
+    await repo.enforce_watch_budget(CHAIN, 1)
+    assert await repo.watched_wallets(CHAIN) == [smart]
+
+
+async def test_probation_protects_a_candidate_that_has_not_been_judged_yet():
+    # A wallet discovered today has not had time to complete the trades scoring
+    # needs, so an empty "smart" list must not evict it.
+    await repo.watch_candidates(CHAIN, [f"0x{i:040x}" for i in range(10)], budget=400)
+    await repo.apply_watchlist(CHAIN, [], probation_days=7, budget=400)
+    assert len(await repo.watched_wallets(CHAIN)) == 10
+
+
+async def test_probation_expiry_retires_wallets_that_did_not_make_the_cut():
+    candidates = [f"0x{i:040x}" for i in range(10)]
+    await repo.watch_candidates(CHAIN, candidates, budget=400)
+    await db.execute(
+        "UPDATE wallets SET watch_since = now() - interval '30 days' WHERE chain_id = $1",
+        CHAIN,
+    )
+    await repo.apply_watchlist(CHAIN, candidates[:3], probation_days=7, budget=400)
+    assert sorted(await repo.watched_wallets(CHAIN)) == sorted(candidates[:3])
+
+
+async def test_an_excluded_wallet_is_not_rewatched_by_discovery():
+    # Otherwise a wallet already judged and rejected would consume watch budget
+    # again on every discovery run.
+    wallet = "0x" + "33" * 20
+    await repo.watch_candidates(CHAIN, [wallet], budget=400)
+    await repo.exclude_wallets(CHAIN, [wallet], "scored_out")
+    await repo.watch_candidates(CHAIN, [wallet], budget=400)
+    assert await repo.watched_wallets(CHAIN) == []
+
+
+async def test_contracts_are_never_watched_even_if_rediscovered():
+    router = "0x" + "44" * 20
+    await repo.upsert_wallets(CHAIN, [router])
+    await repo.mark_contracts(CHAIN, [router])
+    await repo.watch_candidates(CHAIN, [router], budget=400)
+    assert await repo.watched_wallets(CHAIN) == []
+
+
+async def test_watch_candidates_is_idempotent():
+    candidates = [f"0x{i:040x}" for i in range(5)]
+    await repo.watch_candidates(CHAIN, candidates, budget=400)
+    first = await db.fetchval(
+        "SELECT watch_since FROM wallets WHERE chain_id = $1 AND address = $2",
+        CHAIN,
+        candidates[0],
+    )
+    await repo.watch_candidates(CHAIN, candidates, budget=400)
+    second = await db.fetchval(
+        "SELECT watch_since FROM wallets WHERE chain_id = $1 AND address = $2",
+        CHAIN,
+        candidates[0],
+    )
+    # Re-discovery must not reset the clock, or probation would never expire.
+    assert first == second
+    assert len(await repo.watched_wallets(CHAIN)) == 5

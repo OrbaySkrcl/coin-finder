@@ -23,3 +23,21 @@ Base'de ~2s blok süresi × tüm DEX pool'ları = ücretsiz rate limit'i saniyel
 
 Tek çağrıyla N cüzdanın tüm token hareketi gelir; pool başına sorgu gerekmez.
 Bu, ücretsiz katmanda sistemi mümkün kılan tek asıl mimari karar.
+
+## 2026-09-06 — Bootstrap kilitlenmesi: en pahalı hata türü
+
+Keşif cüzdanları `watch_since = NULL` ile kaydediyordu. İzleyici sadece
+`watch_since` dolu olanları okuyor, puanlama ise işlem geçmişi boş olduğu için
+hemen çıkıp izleme listesini hiç yazmıyordu. Döngü kapalıydı: **sistem asla
+sinyal üretemezdi.**
+
+Her bileşen kendi testinde doğruydu. Hata bileşenlerin *arasındaydı* ve sadece
+soğuk başlangıçta ortaya çıkıyordu — mevcut testlerin hepsi izleme listesini
+elle dolduruyordu, o yüzden hiçbiri bunu yakalayamadı.
+
+**Kural:** Aşamalı bir boru hattında "A, B'yi besler; B, C'yi besler" zincirini
+**tamamen boş bir veritabanından** başlatan bir test yaz. Her aşamayı tek tek
+test etmek bu sınıf hatayı yakalamıyor.
+
+**İkinci kural:** Kullanıcının ekran görüntüsündeki sayılara bak. "52 cüzdan
+bulundu / 0 izleniyor / 0 işlem" üçlüsü hatayı doğrudan gösteriyordu.

@@ -142,7 +142,12 @@
 
   <section class="card">
     <h2>Kendi filtreni test et</h2>
-    <p class="lede">Swap ücreti, pozisyon boyutundaki fiyat etkisi ve gaz düşülmüş net sonuç.</p>
+    <p class="lede">
+      Swap ücreti, pozisyon boyutundaki fiyat etkisi ve gaz düşülmüş net sonuç.
+      <b>Bu form geçicidir</b> — Telegram bildirim ayarlarını değiştirmez.
+      Telegram'da <code>/ayarlar</code> yazıp oradaki bağlantıya basarsan
+      ayarların bu forma yüklenir.
+    </p>
     <div class="row">
       <div>
         <label for="window">Dönem</label>
@@ -219,7 +224,18 @@
 
 <script>
 const $ = (s) => document.querySelector(s);
-const state = { chains: [], selectedChains: new Set(), safeOnly: false };
+const state = { chains: [], selectedChains: new Set(), safeOnly: false, hasSignals: true };
+
+// While the system is still warming up every analysis panel is empty, and four
+// differently-worded blank tables read like four separate faults. One shared
+// explanation, pointing at the progress list that says why, is the honest
+// version of "nothing here yet".
+function warmingUpNotice(colspan) {
+  return `<tr><td colspan="${colspan}" class="empty">
+    Sistem henüz sinyal üretmedi — analiz için veri yok.<br>
+    Yukarıdaki <b>Kurulum ilerlemesi</b> bölümü hangi aşamada olduğunu gösteriyor.
+  </td></tr>`;
+}
 
 // Turkish number conventions throughout: comma as the decimal separator, and
 // the percent sign before the number ("%22", not "22%").
@@ -349,6 +365,7 @@ async function loadStats() {
     ["İşlem kaydı", fmtNum(s.trades_total), "cüzdan odaklı indeksleme"],
     ["Abone", fmtNum(s.users), "Telegram"],
   ];
+  state.hasSignals = Number(s.signals_total ?? 0) > 0;
   $("#stats").innerHTML = cards
     .map(([k, v, sub]) => `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`)
     .join("");
@@ -360,7 +377,7 @@ async function loadCompare() {
   const data = await api("/api/backtest/compare?window_days=60");
   const body = $("#compare tbody");
   if (!data.results.length || !data.results[0].signals) {
-    body.innerHTML = `<tr><td colspan="6" class="empty">Henüz yeterli veri yok.</td></tr>`;
+    body.innerHTML = warmingUpNotice(6);
     return;
   }
   body.innerHTML = data.results
@@ -379,7 +396,13 @@ const BUCKET_TR = { "flat (<1x)": "zararda (<1x)", "1-2x": "1-2x", "2-5x": "2-5x
 
 function renderResult(r) {
   if (!r.signals) {
-    $("#result").innerHTML = `<div class="empty">Bu filtreye uyan sinyal yok.</div>`;
+    $("#result").innerHTML = state.hasSignals
+      ? `<div class="note">Bu filtreye uyan sinyal yok. Filtreyi gevşetmeyi dene:
+         daha düşük "min bağımsız cüzdan", daha yüksek market cap sınırı,
+         veya daha uzun bir dönem.</div>`
+      : `<div class="note">Sistem henüz sinyal üretmedi, o yüzden test edilecek
+         veri yok. Yukarıdaki <b>Kurulum ilerlemesi</b> bölümü hangi aşamada
+         olduğunu gösteriyor — ilk sinyaller için 2-4 gün normaldir.</div>`;
     return;
   }
   const total = Object.values(r.buckets).reduce((a, b) => a + b, 0) || 1;
@@ -464,7 +487,7 @@ async function loadLeaders() {
   body.innerHTML = `<tr><td colspan="7" class="empty">Filtre kombinasyonları taranıyor…</td></tr>`;
   const data = await api("/api/strategies/top?window_days=60&limit=10");
   if (!data.strategies.length) {
-    body.innerHTML = `<tr><td colspan="7" class="empty">Sıralama için henüz yeterli sinyal yok.</td></tr>`;
+    body.innerHTML = warmingUpNotice(7);
     return;
   }
   $("#leader-note").innerHTML =
@@ -495,7 +518,7 @@ async function loadSignals() {
   const names = Object.fromEntries(state.chains.map((c) => [c.chain_id, c.name]));
   const body = $("#signals tbody");
   if (!data.signals.length) {
-    body.innerHTML = `<tr><td colspan="8" class="empty">Henüz sinyal yok.</td></tr>`;
+    body.innerHTML = warmingUpNotice(8);
     return;
   }
   const safetyClass = { safe: "pos", caution: "warnc", danger: "neg" };
@@ -511,6 +534,30 @@ async function loadSignals() {
       <td class="${s.is_dead ? "neg" : ""}">${s.is_dead ? "sıfırlandı" : fmtX(s.current_multiple)}</td>
     </tr>`)
     .join("");
+}
+
+function applyQueryPrefill() {
+  const q = new URLSearchParams(location.search);
+  if (![...q.keys()].length) return false;
+  const setIf = (key, sel) => { if (q.has(key)) $(sel).value = q.get(key); };
+  setIf("size", "#size");
+  setIf("clusters", "#clusters");
+  setIf("maxmc", "#maxmc");
+  setIf("minliq", "#minliq");
+  setIf("window", "#window");
+  setIf("exit", "#exit");
+  if (q.has("chains")) {
+    const wanted = new Set(q.get("chains").split(",").filter(Boolean));
+    state.selectedChains = new Set(wanted);
+    $("#chains").querySelectorAll("[data-chain]").forEach((el) => {
+      el.setAttribute("aria-pressed", String(wanted.has(el.dataset.chain)));
+    });
+  }
+  if (q.get("safe") === "1") {
+    state.safeOnly = true;
+    safeChip.setAttribute("aria-pressed", "true");
+  }
+  return true;
 }
 
 $("#run").addEventListener("click", runBacktest);
@@ -531,6 +578,7 @@ safeChip.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key ===
   // Each section fails independently - one broken panel must not blank the page.
   const settle = (p) => p.catch((e) => console.warn(e.message));
   await Promise.all([settle(loadMeta()), settle(loadStats())]);
+  applyQueryPrefill();
   await Promise.all([settle(loadCompare()), settle(loadSignals()), settle(runBacktest())]);
   await settle(loadLeaders());
 })();

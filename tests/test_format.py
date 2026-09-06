@@ -192,3 +192,44 @@ def test_links_are_turkish_and_point_at_the_token():
     assert "📈 Grafik" in labels and "🐦 X'te ara" in labels
     urls = dict(signal_links(SIGNAL, BASE))
     assert SIGNAL["token"] in urls["🔍 Explorer"]
+
+
+# --- panel link --------------------------------------------------------
+
+
+def test_panel_link_carries_the_users_filter():
+    import os
+
+    from coinfinder.config import get_settings
+
+    os.environ["PUBLIC_BASE_URL"] = "https://alpha.up.railway.app"
+    get_settings.cache_clear()
+    from coinfinder.bot.main import panel_url
+
+    url = panel_url(
+        {
+            "chains": ["base", "robinhood"],
+            "min_clusters": 4,
+            "trade_size_usd": 10.0,
+            "max_mcap_usd": 500_000,
+            "require_safe": True,
+        }
+    )
+    assert url is not None
+    assert "size=10" in url and "clusters=4" in url
+    assert "chains=base%2Crobinhood" in url
+    assert "maxmc=500000" in url and "safe=1" in url
+
+
+def test_panel_link_is_omitted_without_a_public_address():
+    import os
+
+    from coinfinder.config import get_settings
+
+    os.environ["PUBLIC_BASE_URL"] = ""
+    get_settings.cache_clear()
+    from coinfinder.bot.main import panel_url
+
+    assert panel_url({"chains": ["base"], "min_clusters": 3}) is None
+    os.environ.pop("PUBLIC_BASE_URL", None)
+    get_settings.cache_clear()

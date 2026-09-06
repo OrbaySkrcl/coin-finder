@@ -229,13 +229,31 @@ async def rescore(chain: Chain, settings: Settings) -> int:
     await repo.upsert_scores(chain.chain_id, [s.as_row(settings.score_window_days) for s in ranked])
 
     smart = [s.wallet for s in ranked if s.is_smart]
-    if smart:
-        await repo.set_watchlist(chain.chain_id, smart)
+    await repo.apply_watchlist(
+        chain.chain_id,
+        smart,
+        probation_days=settings.watch_probation_days,
+        budget=settings.watch_budget,
+    )
+
+    # A wallet that has traded enough to be judged and failed on behaviour or
+    # profit is excluded, so discovery does not keep cycling it back in and
+    # spending watch budget on a known answer. "too_few_trades" is not a
+    # verdict - those wallets simply need more time.
+    settled = [
+        s.wallet
+        for s in ranked
+        if s.excluded_reason in {"not_profitable", "bot_like_hold", "bot_like_frequency"}
+    ]
+    if settled:
+        await repo.exclude_wallets(chain.chain_id, settled, "scored_out")
+
     log.info(
         "pipeline.rescored",
         chain=chain.key,
         scored=len(ranked),
         smart=len(smart),
+        excluded=len(settled),
         sybil_clusters=len(cluster_result.multi_wallet_clusters),
     )
     return len(smart)
@@ -278,12 +296,15 @@ async def discover(
         return 0
 
     eoas, contracts = await discovery.filter_to_eoas(rpc, sorted(found))
-    await repo.upsert_wallets(chain.chain_id, eoas)
     if contracts:
         await repo.upsert_wallets(chain.chain_id, contracts)
         await repo.mark_contracts(chain.chain_id, contracts)
-    log.info("pipeline.discovered", chain=chain.key, wallets=len(eoas), contracts=len(contracts))
-    return len(eoas)
+    # Watch candidates immediately. Recording them unwatched deadlocked the
+    # whole pipeline: no watch means no trades, no trades means no scores, and
+    # no scores means the watchlist was never written.
+    watched = await repo.watch_candidates(chain.chain_id, eoas, budget=settings.watch_budget)
+    log.info("pipeline.discovered", chain=chain.key, candidates=watched, contracts=len(contracts))
+    return watched
 
 
 # --- stage 5: keep outcomes current -------------------------------------

@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlencode
 
 import structlog
 from aiogram import Bot, Dispatcher, F, Router
@@ -193,7 +194,35 @@ def _filters_keyboard(user: dict[str, Any]) -> InlineKeyboardMarkup:
             )
         ]
     )
+    if (url := panel_url(user)) is not None:
+        rows.append([InlineKeyboardButton(text="🔬 Bu ayarları Strateji Lab'da test et", url=url)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def panel_url(user: dict[str, Any]) -> str | None:
+    """A Strategy Lab link carrying this user's filter as query parameters.
+
+    One-way on purpose: the panel is anonymous and prefilling a form needs no
+    authentication, whereas letting a web page write back to someone's alert
+    settings would. So the link hands the settings over for research; changing
+    them stays in Telegram.
+    """
+    base = get_settings().public_base_url.rstrip("/")
+    if not base or base.startswith("http://localhost"):
+        return None
+
+    params: dict[str, str] = {
+        "size": f"{user_size(user):g}",
+        "clusters": str(int(user.get("min_clusters") or 3)),
+        "chains": ",".join(user.get("chains") or []),
+    }
+    if user.get("max_mcap_usd"):
+        params["maxmc"] = f"{float(user['max_mcap_usd']):g}"
+    if user.get("min_liquidity_usd"):
+        params["minliq"] = f"{float(user['min_liquidity_usd']):g}"
+    if user.get("require_safe"):
+        params["safe"] = "1"
+    return f"{base}/?{urlencode(params)}"
 
 
 def _ceiling_active(current: Any, option: int) -> bool:

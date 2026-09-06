@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     score_halflife_days: float = Field(default=30.0)
     smart_wallet_min_trades: int = Field(default=8)
     smart_wallet_top_n: int = Field(default=600)
+    # Watching costs RPC quota in proportion to the wallet count, so the
+    # watchlist is capped rather than allowed to grow with every discovery run.
+    watch_budget: int = Field(default=400)
+    # A freshly discovered wallet is watched unconditionally for this long, so
+    # it has time to complete the trades scoring needs before being judged.
+    watch_probation_days: float = Field(default=7.0)
 
     # --- backtest cost model --------------------------------------------
     default_trade_size_usd: float = Field(default=100.0)

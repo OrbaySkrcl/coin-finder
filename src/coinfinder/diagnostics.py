@@ -201,6 +201,7 @@ async def counts() -> dict[str, Any]:
 def build_progress(c: dict[str, Any], settings: Settings) -> list[dict[str, Any]]:
     """Four setup milestones, in the order they actually happen."""
     candidates = int(c.get("candidate_wallets") or 0)
+    watched = int(c.get("watched_wallets") or 0)
     trades = int(c.get("trades") or 0)
     smart = int(c.get("smart_wallets") or 0)
     signals = int(c.get("signals") or 0)
@@ -220,10 +221,16 @@ def build_progress(c: dict[str, Any], settings: Settings) -> list[dict[str, Any]
             "key": "indexing",
             "label": "2. İşlemlerini izleme",
             "done": trades > 0,
+            # Once candidates are being watched, "starts after wallets are
+            # found" is no longer true and reads as if something is stuck.
             "detail": (
                 f"{tr_int(trades)} işlem kaydedildi."
                 if trades
-                else "Cüzdan bulunduktan sonra başlar."
+                else (
+                    f"{tr_int(watched)} cüzdan izleniyor, ilk işlem bekleniyor."
+                    if watched
+                    else "Cüzdan bulunduktan sonra başlar."
+                )
             ),
         },
         {

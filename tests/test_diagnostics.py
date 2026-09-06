@@ -176,3 +176,20 @@ def test_every_level_has_an_icon(level):
     from coinfinder.diagnostics import ICON
 
     assert ICON[level]
+
+
+def test_watching_step_reports_the_wait_rather_than_a_prerequisite():
+    """Regression for a confusing line during warm-up.
+
+    Once candidates are on the watchlist, "starts after wallets are found" is
+    no longer true - the operator sees 52 wallets watched next to a step
+    claiming it is waiting for wallets, which reads like a fault.
+    """
+    steps = build_progress(counts(candidate_wallets=52, watched_wallets=52), SETTINGS)
+    assert steps[1]["active"]
+    assert "52 cüzdan izleniyor" in steps[1]["detail"]
+
+
+def test_watching_step_before_anything_is_discovered():
+    steps = build_progress(counts(), SETTINGS)
+    assert steps[1]["detail"] == "Cüzdan bulunduktan sonra başlar."

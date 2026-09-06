@@ -106,6 +106,107 @@ async def exclude_wallets(chain_id: int, addresses: list[str], reason: str) -> N
     )
 
 
+async def watch_candidates(chain_id: int, addresses: list[str], *, budget: int) -> int:
+    """Put newly discovered wallets on the watchlist provisionally.
+
+    Discovery used to insert candidates unwatched, which deadlocked the whole
+    system: the watcher only reads wallets with ``watch_since`` set, so no
+    trades were ever recorded, so scoring had nothing to rank, so the watchlist
+    was never populated - and round it went. A candidate has to be watched
+    before it can prove anything.
+    """
+    unique = list(dict.fromkeys(a.lower() for a in addresses))
+    if not unique:
+        return 0
+    await db.execute(
+        """
+        INSERT INTO wallets (chain_id, address, watch_since)
+        SELECT $1, addr, now() FROM unnest($2::text[]) AS addr
+        ON CONFLICT (chain_id, address) DO UPDATE
+        SET watch_since = COALESCE(wallets.watch_since, now())
+        WHERE NOT wallets.is_excluded AND NOT wallets.is_contract
+        """,
+        chain_id,
+        unique,
+    )
+    await enforce_watch_budget(chain_id, budget)
+    return len(unique)
+
+
+async def enforce_watch_budget(chain_id: int, budget: int) -> int:
+    """Cap how many wallets are watched, keeping the most valuable.
+
+    Watching costs RPC quota in proportion to the wallet count, which is the
+    one resource this design spends. Ranking is: proven smart wallets by score,
+    then the most recently discovered candidates, since those are the ones
+    still owed a chance to prove themselves.
+    """
+    dropped = await db.fetchval(
+        """
+        WITH ranked AS (
+            SELECT w.address,
+                   ROW_NUMBER() OVER (
+                       ORDER BY COALESCE(s.is_smart, FALSE) DESC,
+                                COALESCE(s.score, -1) DESC,
+                                w.watch_since DESC NULLS LAST
+                   ) AS rn
+            FROM wallets w
+            LEFT JOIN wallet_scores s
+                   ON s.chain_id = w.chain_id AND s.wallet = w.address
+            WHERE w.chain_id = $1 AND w.watch_since IS NOT NULL
+              AND NOT w.is_excluded AND NOT w.is_contract
+        ), trimmed AS (
+            UPDATE wallets SET watch_since = NULL
+            WHERE chain_id = $1
+              AND address IN (SELECT address FROM ranked WHERE rn > $2)
+            RETURNING 1
+        )
+        SELECT count(*) FROM trimmed
+        """,
+        chain_id,
+        budget,
+    )
+    return int(dropped or 0)
+
+
+async def apply_watchlist(
+    chain_id: int, keep: list[str], *, probation_days: float, budget: int
+) -> int:
+    """Keep the proven wallets watched and retire the ones that had their turn.
+
+    Candidates are not evicted the moment they fail to make the cut: a wallet
+    discovered yesterday has not had time to complete the trades scoring needs.
+    Only wallets watched longer than ``probation_days`` are retired.
+    """
+    keepers = list(dict.fromkeys(a.lower() for a in keep))
+    async with db.acquire() as conn, conn.transaction():
+        if keepers:
+            await conn.execute(
+                """
+                INSERT INTO wallets (chain_id, address, watch_since)
+                SELECT $1, addr, now() FROM unnest($2::text[]) AS addr
+                ON CONFLICT (chain_id, address) DO UPDATE
+                SET watch_since = COALESCE(wallets.watch_since, now())
+                """,
+                chain_id,
+                keepers,
+            )
+        await conn.execute(
+            """
+            UPDATE wallets SET watch_since = NULL
+            WHERE chain_id = $1
+              AND watch_since IS NOT NULL
+              AND NOT (address = ANY($2::text[]))
+              AND watch_since < now() - make_interval(secs => $3)
+            """,
+            chain_id,
+            keepers,
+            probation_days * 86400.0,
+        )
+    await enforce_watch_budget(chain_id, budget)
+    return len(keepers)
+
+
 async def set_watchlist(chain_id: int, addresses: list[str]) -> int:
     """Make exactly ``addresses`` the watched set for this chain."""
     lowered = list(dict.fromkeys(a.lower() for a in addresses))
