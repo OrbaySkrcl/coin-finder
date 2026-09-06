@@ -22,6 +22,7 @@ import structlog
 from coinfinder import db
 from coinfinder.chains import Chain, enabled_chains
 from coinfinder.config import Settings, get_settings
+from coinfinder.humanize import tr_int, usd_price
 from coinfinder.rpc.pool import RpcPool
 from coinfinder.sources.dexscreener import DexScreenerClient, best_pair
 
@@ -127,7 +128,7 @@ async def check_chain(chain: Chain, settings: Settings) -> Check:
         code=f"rpc:{chain.key}",
         level=Level.OK,
         title=f"{chain.name} bağlantısı",
-        detail=f"Bağlı, blok {block:,}.",
+        detail=f"Bağlı, blok {tr_int(block)}.",
     )
 
 
@@ -148,7 +149,7 @@ async def check_market_data(chains: list[Chain]) -> Check:
                     code="market_data",
                     level=Level.OK,
                     title="Fiyat verisi (DexScreener)",
-                    detail=f"Bağlı. Örnek: {pair.base_symbol} ${pair.price_usd:,.2f}.",
+                    detail=f"Bağlı. Örnek: {pair.base_symbol} {usd_price(pair.price_usd)}.",
                 )
     return Check(
         code="market_data",
@@ -210,7 +211,7 @@ def build_progress(c: dict[str, Any], settings: Settings) -> list[dict[str, Any]
             "label": "1. Aday cüzdanları bulma",
             "done": candidates > 0,
             "detail": (
-                f"{candidates:,} cüzdan bulundu."
+                f"{tr_int(candidates)} cüzdan bulundu."
                 if candidates
                 else "Henüz başlamadı. İlk tarama ~1 saat içinde."
             ),
@@ -220,7 +221,9 @@ def build_progress(c: dict[str, Any], settings: Settings) -> list[dict[str, Any]
             "label": "2. İşlemlerini izleme",
             "done": trades > 0,
             "detail": (
-                f"{trades:,} işlem kaydedildi." if trades else "Cüzdan bulunduktan sonra başlar."
+                f"{tr_int(trades)} işlem kaydedildi."
+                if trades
+                else "Cüzdan bulunduktan sonra başlar."
             ),
         },
         {
@@ -228,7 +231,7 @@ def build_progress(c: dict[str, Any], settings: Settings) -> list[dict[str, Any]
             "label": "3. Cüzdanları puanlama",
             "done": smart > 0,
             "detail": (
-                f"{smart:,} cüzdan 'akıllı para' olarak seçildi."
+                f"{tr_int(smart)} cüzdan 'akıllı para' olarak seçildi."
                 if smart
                 else (
                     f"Her cüzdan için en az {settings.smart_wallet_min_trades} tamamlanmış "
@@ -241,7 +244,7 @@ def build_progress(c: dict[str, Any], settings: Settings) -> list[dict[str, Any]
             "label": "4. Sinyal üretme",
             "done": signals > 0,
             "detail": (
-                f"{signals:,} sinyal üretildi, son 24 saatte {c.get('signals_24h') or 0}."
+                f"{tr_int(signals)} sinyal üretildi, son 24 saatte {c.get('signals_24h') or 0}."
                 if signals
                 else (
                     f"Aynı tokeni {settings.confluence_min_clusters} bağımsız akıllı cüzdan "

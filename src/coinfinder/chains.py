@@ -15,6 +15,9 @@ class Chain:
     key: str
     chain_id: int
     name: str
+    #: Fits a Telegram button three-to-a-row on a phone, where "Robinhood
+    #: Chain" is truncated to nonsense.
+    short_name: str
     native_symbol: str
     wrapped_native: str
     #: Public RPC endpoints, tried in order with health-based rotation.
@@ -45,6 +48,7 @@ BASE = Chain(
     key="base",
     chain_id=8453,
     name="Base",
+    short_name="Base",
     native_symbol="ETH",
     wrapped_native="0x4200000000000000000000000000000000000006",
     rpc_urls=(
@@ -79,6 +83,7 @@ ROBINHOOD = Chain(
     key="robinhood",
     chain_id=4663,
     name="Robinhood Chain",
+    short_name="Robinhood",
     native_symbol="ETH",
     # Arbitrum Orbit chains expose WETH at the standard Orbit predeploy slot;
     # override via env if the canonical deployment differs.
@@ -100,6 +105,7 @@ BSC = Chain(
     key="bsc",
     chain_id=56,
     name="BNB Chain",
+    short_name="BNB",
     native_symbol="BNB",
     wrapped_native="0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
     rpc_urls=(

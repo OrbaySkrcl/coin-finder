@@ -25,6 +25,7 @@ from typing import Any
 
 from coinfinder.backtest.costs import CostModel, round_trip_cost_pct
 from coinfinder.chains import Chain
+from coinfinder.humanize import duration, pct, tr_num, usd, usd_price
 
 DEFAULT_TRADE_SIZE_USD = 100.0
 
@@ -35,44 +36,22 @@ TRADE_BOTS = (
 )
 
 
+__all__ = [
+    "DEFAULT_TRADE_SIZE_USD",
+    "duration",
+    "format_signal",
+    "format_stats",
+    "pct",
+    "signal_links",
+    "tr_num",
+    "trade_economics",
+    "usd",
+    "usd_price",
+]
+
+
 def esc(value: Any) -> str:
     return html.escape(str(value), quote=False)
-
-
-def tr_num(value: float, decimals: int = 2) -> str:
-    """Turkish number formatting: comma decimal, dot thousands."""
-    formatted = f"{value:,.{decimals}f}"
-    return formatted.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
-
-
-def usd(value: float | None) -> str:
-    if value is None:
-        return "?"
-    sign = "-" if value < 0 else ""
-    amount = abs(value)
-    if amount >= 1_000_000:
-        return f"{sign}${tr_num(amount / 1_000_000, 2)}M"
-    if amount >= 1_000:
-        return f"{sign}${tr_num(amount / 1_000, 1)}B"
-    if amount >= 1:
-        return f"{sign}${tr_num(amount, 0)}"
-    return f"{sign}${amount:.8f}".rstrip("0").rstrip(".").replace(".", ",")
-
-
-def pct(value: float, decimals: int = 1) -> str:
-    return f"%{tr_num(value, decimals)}"
-
-
-def duration(minutes: int | None) -> str:
-    if minutes is None:
-        return "?"
-    if minutes < 60:
-        return f"{minutes}dk"
-    hours, mins = divmod(minutes, 60)
-    if hours < 24:
-        return f"{hours}sa {mins}dk" if mins else f"{hours}sa"
-    days, hours = divmod(hours, 24)
-    return f"{days}g {hours}sa" if hours else f"{days}g"
 
 
 SAFETY_LINE = {
@@ -149,7 +128,10 @@ def format_signal(
     lines += [f"💰 Market cap: {usd(mcap)}", f"💧 Likidite: {usd(liq)}"]
     if liq and mcap:
         lines.append(f"📊 Likidite/MC: {pct(100 * liq / mcap)}")
-    lines += [f"🕐 Yaş: {duration(signal.get('snap_age_minutes'))}", f"💵 Fiyat: {usd(price)}"]
+    lines += [
+        f"🕐 Yaş: {duration(signal.get('snap_age_minutes'))}",
+        f"💵 Fiyat: {usd_price(price)}",
+    ]
     if signal.get("usd_spent"):
         lines.append(f"🛒 Akıllı para girişi: {usd(_f(signal['usd_spent']))}")
 

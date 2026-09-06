@@ -42,7 +42,8 @@ def test_progress_advances_with_the_data():
     steps = build_progress(counts(candidate_wallets=120, trades=4000), SETTINGS)
     assert steps[0]["done"] and steps[1]["done"]
     assert steps[2]["active"] is True
-    assert "120" in steps[0]["detail"] and "4,000" in steps[1]["detail"]
+    # Turkish thousands separator: 4.000, not 4,000.
+    assert "120" in steps[0]["detail"] and "4.000" in steps[1]["detail"]
 
 
 def test_a_gap_behind_a_finished_step_is_not_shown_as_pending():

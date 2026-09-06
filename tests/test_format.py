@@ -48,10 +48,27 @@ def test_percent_sign_goes_before_the_number():
 
 def test_usd_scales_and_keeps_the_sign():
     assert usd(190_933) == "$190,9B"
-    assert usd(1_500_000) == "$1,50M"
+    assert usd(1_500_000) == "$1,5M"
     assert usd(10) == "$10"
     assert usd(-27_400) == "-$27,4B"
     assert usd(None) == "?"
+
+
+def test_usd_drops_a_trailing_zero_decimal():
+    # "$500,0B" reads as noise next to "$190,9B"; the zero carries nothing.
+    assert usd(500_000) == "$500B"
+    assert usd(2_000_000) == "$2M"
+
+
+def test_price_is_never_abbreviated():
+    # usd() compacts thousands into "B", which is right for a market cap and
+    # badly wrong for a price: WETH at $2501.79 must not render as "$2,5B".
+    from coinfinder.bot.format import usd_price
+
+    assert usd_price(2501.79) == "$2.501,79"
+    assert usd(2501.79) == "$2,5B"
+    assert usd_price(0.000197) == "$0,000197"
+    assert usd_price(None) == "?"
 
 
 def test_duration_is_turkish():

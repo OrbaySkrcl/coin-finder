@@ -40,6 +40,7 @@ from coinfinder.bot.format import (
 )
 from coinfinder.chains import ALL_CHAINS, BY_CHAIN_ID, get_chain
 from coinfinder.config import get_settings
+from coinfinder.humanize import unwrap
 from coinfinder.logging_setup import setup_logging
 
 log = structlog.get_logger(__name__)
@@ -56,29 +57,39 @@ SIZE_OPTIONS = (5, 10, 20, 50, 100, 250)
 #: Round-trip cost ceilings, as a percentage of position size. 0 disables.
 COST_OPTIONS = (2, 5, 10, 0)
 
-WELCOME = """<b>coin-finder</b> — akıllı para sinyalleri
+# Source stays wrapped for readability; unwrap() joins each paragraph into one
+# line so Telegram can wrap it to the reader's screen instead.
+WELCOME = (
+    unwrap("""<b>Alpha Coin Finder</b> — akıllı para sinyalleri
 
 Base, Robinhood Chain ve BNB Chain'de geçmişte kâr etmiş cüzdanları izliyorum.
 Bunlardan birkaç <i>bağımsız</i> tanesi aynı tokeni alınca sana haber veriyorum.
 
-Farkı şurada:
+<b>Farkı şurada:</b>
+
 • Kanaat, adres sayısını değil <b>bağımsız kişi sayısını</b> sayar. Aynı
-  kaynaktan beslenen beş cüzdan bir kişidir, beş değil.
+kaynaktan beslenen beş cüzdan bir kişidir, beş değil.
+
 • Kalite bir yıldız değil, <b>kontrol edebileceğin bir olasılık</b>.
-• Her sinyalde <b>senin pozisyon boyutunda</b> gidiş-dönüş maliyeti ve
-  başabaş çarpanı yazıyor. Gaz işlem başına alınır, o yüzden bu sayı
-  $10 ile $500 arasında tamamen değişir.
-• /stats senin filtreni gerçek geçmişe karşı test eder — ücret, kayma ve
-  gaz düşülmüş, güven aralığıyla birlikte.
+
+• Her sinyalde <b>senin pozisyon boyutunda</b> gidiş-dönüş maliyeti ve başabaş
+çarpanı yazıyor. Gaz işlem başına alınır, o yüzden bu sayı $10 ile $500
+arasında tamamen değişir.
+
+• /karne senin filtreni gerçek geçmişe karşı test eder — ücret, kayma ve gaz
+düşülmüş, güven aralığıyla birlikte.
 
 Bunlar veridir, yatırım tavsiyesi değildir. Bu piyasadaki tokenlerin çoğu
-sıfırlanır.
+sıfırlanır.""")
+    + """
 
+<b>Komutlar</b>
 /ayarlar — sana ne ulaşacağını belirle
-/stats — filtrenin gerçekte ne kazandırdığı
+/karne — filtrenin gerçekte ne kazandırdığı
 /durum — sistem çalışıyor mu
 /top — en yüksek puanlı cüzdanlar
-/pause — bildirimleri durdur"""
+/durdur — bildirimleri durdur"""
+)
 
 
 def _menu() -> InlineKeyboardMarkup:
@@ -105,22 +116,29 @@ def user_size(user: dict[str, Any]) -> float:
 
 
 def _filters_keyboard(user: dict[str, Any]) -> InlineKeyboardMarkup:
+    """Buttons only. The message above carries the labels.
+
+    Telegram truncates button text to fit, and at four buttons to a row a
+    phone allows roughly nine characters. "○ maliyet ≤%2" became "○ maliyet ≤"
+    for every option, making the control unusable, so the labels here are kept
+    terse and _filters_summary above provides the legend.
+    """
     chains = set(user.get("chains") or [])
     rows = [
         [
             InlineKeyboardButton(
-                text=f"{'✅' if key in chains else '⬜'} {chain.name}",
+                text=f"{'✅' if key in chains else '⬜'} {chain.short_name}",
                 callback_data=f"chain:{key}",
             )
+            for key, chain in ALL_CHAINS.items()
         ]
-        for key, chain in ALL_CHAINS.items()
     ]
 
     current_clusters = int(user.get("min_clusters") or 3)
     rows.append(
         [
             InlineKeyboardButton(
-                text=f"{'●' if current_clusters == n else '○'} {n}+ cüzdan",
+                text=f"{'●' if current_clusters == n else '○'} {n}+",
                 callback_data=f"clusters:{n}",
             )
             for n in (2, 3, 4, 5)
@@ -128,50 +146,41 @@ def _filters_keyboard(user: dict[str, Any]) -> InlineKeyboardMarkup:
     )
 
     size = user_size(user)
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=f"{'●' if abs(size - n) < 0.01 else '○'} ${n}",
-                callback_data=f"size:{n}",
-            )
-            for n in SIZE_OPTIONS[:3]
-        ]
-    )
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=f"{'●' if abs(size - n) < 0.01 else '○'} ${n}",
-                callback_data=f"size:{n}",
-            )
-            for n in SIZE_OPTIONS[3:]
-        ]
-    )
+    for group in (SIZE_OPTIONS[:3], SIZE_OPTIONS[3:]):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{'●' if abs(size - n) < 0.01 else '○'} ${n}",
+                    callback_data=f"size:{n}",
+                )
+                for n in group
+            ]
+        )
 
     ceiling = user.get("max_cost_pct")
     rows.append(
         [
             InlineKeyboardButton(
-                text=(
-                    f"{'●' if _ceiling_active(ceiling, n) else '○'} "
-                    + ("maliyet sınırsız" if n == 0 else f"maliyet ≤%{n}")
-                ),
+                text=f"{'●' if _ceiling_active(ceiling, n) else '○'} "
+                + ("kapalı" if n == 0 else f"≤%{n}"),
                 callback_data=f"cost:{n}",
             )
             for n in COST_OPTIONS
         ]
     )
 
-    caps = (("<100b", 100_000), ("<500b", 500_000), ("<2M", 2_000_000), ("sınırsız", 0))
+    caps = (("<100B", 100_000), ("<500B", 500_000), ("<2M", 2_000_000), ("hepsi", 0))
     active_cap = user.get("max_mcap_usd")
     rows.append(
         [
             InlineKeyboardButton(
-                text=f"{'●' if _same(active_cap, value) else '○'} MC {label}",
+                text=f"{'●' if _same(active_cap, value) else '○'} {label}",
                 callback_data=f"maxmc:{value}",
             )
             for label, value in caps
         ]
     )
+
     rows.append(
         [
             InlineKeyboardButton(
@@ -200,18 +209,40 @@ def _same(current: Any, value: int) -> bool:
 
 
 def _filters_summary(user: dict[str, Any]) -> str:
+    """Current values, listed in the same order as the button rows below.
+
+    The buttons are too narrow to label themselves, so this is what tells the
+    reader which row is which.
+    """
     size = user_size(user)
     ceiling = user.get("max_cost_pct")
+    chains = user.get("chains") or []
+    cap = user.get("max_mcap_usd")
+
+    chain_names = ", ".join(chain.short_name for key, chain in ALL_CHAINS.items() if key in chains)
+    if cap:
+        cap_text = f"{usd(float(cap))} altı"
+    else:
+        cap_text = "sınırsız"
+
     lines = [
         "<b>Ayarların</b>",
         "",
-        f"İşlem başına: <b>{usd(size)}</b>",
-        f"Minimum bağımsız cüzdan: <b>{int(user.get('min_clusters') or 3)}</b>",
+        f"🔗 Zincirler: <b>{chain_names or 'yok'}</b>",
+        f"👥 Min bağımsız cüzdan: <b>{int(user.get('min_clusters') or 3)}</b>",
+        f"💰 İşlem başına: <b>{usd(size)}</b>",
+        (
+            f"💸 Maliyet tavanı: <b>%{tr_num(float(ceiling), 0)}</b>"
+            if ceiling
+            else "💸 Maliyet tavanı: <b>kapalı</b>"
+        ),
+        f"📊 Market cap: <b>{cap_text}</b>",
+        (
+            "🛡 Riskli tokenler: <b>eleniyor</b>"
+            if user.get("require_safe")
+            else "🛡 Riskli tokenler: <b>gönderiliyor</b>"
+        ),
     ]
-    if ceiling:
-        lines.append(f"Maliyet tavanı: <b>%{tr_num(float(ceiling), 0)}</b> gidiş-dönüş")
-    else:
-        lines.append("Maliyet tavanı: <b>yok</b>")
 
     # Concrete consequence of the chosen size, per chain. This is the whole
     # point of the sizing control, so it belongs in front of the buttons.
@@ -220,7 +251,15 @@ def _filters_summary(user: dict[str, Any]) -> str:
         cost_pct, break_even = trade_economics(
             liquidity_usd=40_000.0, chain=chain, trade_size_usd=size
         )
-        lines.append(f"  {chain.name}: %{tr_num(cost_pct, 2)} → başabaş {tr_num(break_even, 3)}x")
+        lines.append(
+            f"  {chain.short_name}: %{tr_num(cost_pct, 2)} → başabaş {tr_num(break_even, 3)}x"
+        )
+
+    lines += [
+        "",
+        "<i>Düğme sırası: zincir · cüzdan · işlem boyutu · maliyet tavanı · "
+        "market cap · güvenlik</i>",
+    ]
     return "\n".join(lines)
 
 
