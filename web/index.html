@@ -270,8 +270,10 @@ function ciText(ci, asPct) {
   return `<div class="ci">%95 aralık ${f(ci[0])} – ${f(ci[1])}</div>`;
 }
 
-// The API keeps filter and exit-model identifiers stable in English so the
-// payload stays machine-readable; display names are translated here.
+// Exit-model identifiers stay English in the payload so it remains
+// machine-readable; their display names are translated here. Filter labels
+// arrive pre-translated as filter_label_tr - this used to re-parse the English
+// string with regular expressions, which broke whenever a label gained a field.
 const EXIT_TR = {
   tp_2x: "2x'te sat", tp_3x: "3x'te sat", tp_5x: "5x'te sat",
   ladder: "kademeli sat", time_1h: "1 saat sonra sat", time_4h: "4 saat sonra sat",
@@ -279,17 +281,6 @@ const EXIT_TR = {
   trail_35pct: "zirveden %35 düşünce sat", peak_50pct: "zirvenin yarısında sat",
 };
 const exitTr = (name) => EXIT_TR[name] || name;
-
-function filterTr(label) {
-  return label
-    .replace(/(\d+)w\+/g, "$1+ cüzdan")
-    .replace(/any MC/g, "MC sınırsız")
-    .replace(/MC (\S+)-(\S+)/g, (_, lo, hi) => `MC ${lo}-${hi}`.replace(/k/g, "b"))
-    .replace(/liq>(\S+)/g, (_, v) => "likidite>" + v.replace("k", "b"))
-    .replace(/age<(\d+)m/g, "yaş<$1dk")
-    .replace(/safe\+caution/g, "temiz+dikkat")
-    .replace(/all signals/g, "tüm sinyaller");
-}
 
 // --- system status ----------------------------------------------------
 
@@ -499,7 +490,7 @@ async function loadLeaders() {
     .map((s) => {
       const o = s.out_of_sample;
       return `<tr>
-        <td>${esc(filterTr(s.filter_label))}</td>
+        <td>${esc(s.filter_label_tr || s.filter_label)}</td>
         <td>${esc(exitTr(s.exit_model))}</td>
         <td>${fmtNum(s.signals)}</td>
         <td>${fmtPct(s.win_rate)}${ciText(s.win_rate_ci, true)}</td>

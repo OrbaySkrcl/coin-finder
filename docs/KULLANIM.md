@@ -9,15 +9,19 @@ nasıl kullanacağınız var.
 
 Botunuza yazacağınız komutların tamamı bu kadar:
 
+> Komutların tamamı Telegram'ın **menü düğmesinde** (mesaj kutusunun yanındaki
+> `/` işareti) listelenir — ezberlemeniz gerekmez.
+
 | Komut | Ne yapar |
 |---|---|
+| `/menu` | Ana menü düğmeleri |
 | `/start` | Botu açar, deneme sürenizi başlatır |
 | `/durum` | **En önemlisi.** Sistem çalışıyor mu, hangi aşamada, sorun var mı |
 | `/ayarlar` | İşlem boyutu, zincirler, maliyet tavanı, filtreler |
-| `/stats` | **Sizin filtrenizin** geçmişte gerçekte ne kazandırdığı |
+| `/karne` | **Sizin filtrenizin** geçmişte gerçekte ne kazandırdığı |
 | `/top` | En yüksek puanlı cüzdanlar |
-| `/pause` | Bildirimleri durdurur |
-| `/resume` | Bildirimleri tekrar açar |
+| `/durdur` | Bildirimleri durdurur |
+| `/devam` | Bildirimleri tekrar açar |
 
 Bir sorun olduğunu düşündüğünüzde ilk yazacağınız şey `/durum`.
 

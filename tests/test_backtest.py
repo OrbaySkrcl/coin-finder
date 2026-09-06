@@ -438,3 +438,38 @@ def test_bootstrap_declines_on_tiny_samples():
 
     assert _bootstrap_ci([1.0] * 11, "median") is None
     assert _bootstrap_ci([1.0] * 12, "median") is not None
+
+
+# --- Turkish filter labels ---------------------------------------------
+
+
+def test_turkish_label_mirrors_the_english_one():
+    """Both renderings live on FilterSpec so they cannot drift apart.
+
+    The dashboard used to re-parse the English label with regular expressions
+    and the Telegram bot showed it untranslated; both now read label_tr().
+    """
+    spec = FilterSpec(
+        min_clusters=3,
+        max_mcap_usd=500_000,
+        min_liquidity_usd=5_000,
+        safety_verdicts=("safe", "caution", "unknown"),
+    )
+    assert spec.label() == "3w+ / MC 0-500k / liq>5k / safe+caution+unknown"
+    assert spec.label_tr() == "3+ cüzdan / MC 0-500b / likidite>5b / temiz+dikkat+bilinmiyor"
+
+
+def test_turkish_label_covers_every_field():
+    assert FilterSpec().label_tr() == "MC sınırsız"
+    assert FilterSpec(min_clusters=5).label_tr() == "5+ cüzdan / MC sınırsız"
+    assert "yaş<60dk" in FilterSpec(max_age_minutes=60).label_tr()
+    assert "MC 0-2M" in FilterSpec(max_mcap_usd=2_000_000).label_tr()
+    assert "MC 100b-sınırsız" in FilterSpec(min_mcap_usd=100_000).label_tr()
+
+
+def test_results_carry_both_labels():
+    rows = [sig(i) for i in range(40)]
+    r = run(rows, spec=FilterSpec(min_clusters=3), exit_model=HoldToNow())
+    assert r.filter_label == "3w+ / any MC"
+    assert r.filter_label_tr == "3+ cüzdan / MC sınırsız"
+    assert r.to_dict()["filter_label_tr"] == r.filter_label_tr

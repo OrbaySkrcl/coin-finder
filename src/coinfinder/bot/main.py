@@ -20,6 +20,8 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
+    BotCommand,
+    BotCommandScopeDefault,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -93,6 +95,30 @@ sıfırlanır.""")
 )
 
 
+#: Registered with Telegram so they appear behind the "/" menu button next to
+#: the message box. Without this the only way to learn a command is to have
+#: read the welcome message and remembered it.
+BOT_COMMANDS = (
+    ("ayarlar", "Zincir, işlem boyutu, maliyet tavanı, filtreler"),
+    ("karne", "Filtrenin gerçekte ne kazandırdığı"),
+    ("durum", "Sistem çalışıyor mu, hangi aşamada"),
+    ("top", "En yüksek puanlı cüzdanlar"),
+    ("menu", "Ana menü"),
+    ("durdur", "Bildirimleri durdur"),
+    ("devam", "Bildirimleri tekrar aç"),
+    ("yardim", "Bu bot ne yapıyor"),
+)
+
+
+async def configure_commands(bot: Bot) -> None:
+    """Publish the command list into Telegram's own menu."""
+    await bot.set_my_commands(
+        [BotCommand(command=name, description=desc) for name, desc in BOT_COMMANDS],
+        scope=BotCommandScopeDefault(),
+    )
+    log.info("bot.commands_registered", count=len(BOT_COMMANDS))
+
+
 def _menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -128,7 +154,10 @@ def _filters_keyboard(user: dict[str, Any]) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
-                text=f"{'✅' if key in chains else '⬜'} {chain.short_name}",
+                # ● / ○ rather than ✅ / ⬜: the emoji ticks are double-width
+                # and clipped "Robinhood" to "Robinhoo" three to a row. This
+                # also matches every other row's marker.
+                text=f"{'●' if key in chains else '○'} {chain.short_name}",
                 callback_data=f"chain:{key}",
             )
             for key, chain in ALL_CHAINS.items()
@@ -332,6 +361,11 @@ async def on_help(message: Message) -> None:
     await message.answer(WELCOME, reply_markup=_menu())
 
 
+@router.message(Command("menu", "menü"))
+async def on_menu_command(message: Message) -> None:
+    await message.answer("<b>Ne yapmak istersin?</b>", reply_markup=_menu())
+
+
 @router.message(Command("ayarlar", "filters"))
 async def on_filters(message: Message) -> None:
     if message.from_user is None:
@@ -470,9 +504,10 @@ async def build_stats(telegram_id: int, username: str | None) -> str:
     )
     return format_stats(
         result,
-        filter_label=spec.label(),
+        filter_label=spec.label_tr(),
         window_days=STATS_WINDOW_DAYS,
         trade_size_usd=size,
+        system_has_signals=bool(signals),
     )
 
 
@@ -603,6 +638,7 @@ async def main() -> None:
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
 
+    await configure_commands(bot)
     alerts = asyncio.create_task(alert_loop(bot), name="alerts")
     log.info("bot.started")
     try:

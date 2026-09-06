@@ -87,7 +87,7 @@ async def run_bot() -> None:
     from aiogram.client.default import DefaultBotProperties
     from aiogram.enums import ParseMode
 
-    from coinfinder.bot.main import alert_loop, router
+    from coinfinder.bot.main import alert_loop, configure_commands, router
 
     bot = Bot(
         settings.telegram_bot_token,
@@ -95,6 +95,7 @@ async def run_bot() -> None:
     )
     dispatcher = Dispatcher()
     dispatcher.include_router(router)
+    await configure_commands(bot)
     alerts = asyncio.create_task(alert_loop(bot), name="alerts")
     try:
         await dispatcher.start_polling(bot, handle_signals=False)

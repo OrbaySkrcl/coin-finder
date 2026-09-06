@@ -70,6 +70,40 @@ class FilterSpec:
             parts.append("+".join(self.safety_verdicts))
         return " / ".join(parts) or "all signals"
 
+    def label_tr(self) -> str:
+        """Turkish rendering of the same filter.
+
+        Kept beside label() rather than translated downstream: the dashboard
+        used to re-parse the English string with regular expressions, which
+        breaks the moment a label gains a field, and the Telegram bot showed
+        the English one untranslated. One source, two renderings.
+        """
+        verdict_tr = {"safe": "temiz", "caution": "dikkat", "unknown": "bilinmiyor"}
+        parts: list[str] = []
+        if self.min_clusters:
+            parts.append(f"{self.min_clusters}+ cüzdan")
+        if self.min_mcap_usd or self.max_mcap_usd:
+            lo = _money_tr(self.min_mcap_usd) if self.min_mcap_usd else "0"
+            hi = _money_tr(self.max_mcap_usd) if self.max_mcap_usd else "sınırsız"
+            parts.append(f"MC {lo}-{hi}")
+        else:
+            parts.append("MC sınırsız")
+        if self.min_liquidity_usd:
+            parts.append(f"likidite>{_money_tr(self.min_liquidity_usd)}")
+        if self.max_age_minutes:
+            parts.append(f"yaş<{self.max_age_minutes}dk")
+        if self.safety_verdicts:
+            parts.append("+".join(verdict_tr.get(v, v) for v in self.safety_verdicts))
+        return " / ".join(parts) or "tüm sinyaller"
+
+
+def _money_tr(amount: float) -> str:
+    """Compact money for a filter label: 500b, 2M."""
+    if amount >= 1_000_000:
+        value = amount / 1_000_000
+        return f"{value:g}M"
+    return f"{amount / 1000:g}b"
+
 
 #: Below this many signals, a result is reported with an explicit caveat. At
 #: n=30 a win-rate interval is roughly plus or minus 15 points, which is wide
@@ -84,6 +118,7 @@ RANKING_PRIOR_SIGNALS = 60
 @dataclass(slots=True)
 class BacktestResult:
     filter_label: str
+    filter_label_tr: str
     exit_model: str
     uses_look_ahead: bool
     signals: int
@@ -360,6 +395,7 @@ def summarise(
     df: pl.DataFrame,
     *,
     filter_label: str,
+    filter_label_tr: str,
     exit_model: ExitModel,
     size_usd: float,
     out_of_sample: dict[str, Any] | None = None,
@@ -375,6 +411,7 @@ def summarise(
     if n == 0:
         return BacktestResult(
             filter_label=filter_label,
+            filter_label_tr=filter_label_tr,
             exit_model=exit_model.name,
             uses_look_ahead=exit_model.uses_look_ahead,
             signals=0,
@@ -404,6 +441,7 @@ def summarise(
 
     return BacktestResult(
         filter_label=filter_label,
+        filter_label_tr=filter_label_tr,
         exit_model=exit_model.name,
         uses_look_ahead=exit_model.uses_look_ahead,
         signals=n,
@@ -459,6 +497,7 @@ def run(
     return summarise(
         scored,
         filter_label=spec.label(),
+        filter_label_tr=spec.label_tr(),
         exit_model=exit_model,
         size_usd=size_usd,
         out_of_sample=oos,

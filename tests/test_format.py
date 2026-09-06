@@ -233,3 +233,30 @@ def test_panel_link_is_omitted_without_a_public_address():
     assert panel_url({"chains": ["base"], "min_clusters": 3}) is None
     os.environ.pop("PUBLIC_BASE_URL", None)
     get_settings.cache_clear()
+
+
+# --- command menu ------------------------------------------------------
+
+
+def test_every_advertised_command_has_a_handler():
+    """The Telegram menu must not offer a command that does nothing."""
+    import re
+
+    from coinfinder.bot import main as bot_main
+
+    source = __import__("pathlib").Path(bot_main.__file__).read_text()
+    handled: set[str] = set()
+    for match in re.finditer(r"Command\(([^)]*)\)", source):
+        handled.update(re.findall(r'"([a-zA-ZğüşöçİĞÜŞÖÇ]+)"', match.group(1)))
+    handled.add("start")
+
+    for name, _ in bot_main.BOT_COMMANDS:
+        assert name in handled, f"/{name} advertised but not handled"
+
+
+def test_command_descriptions_fit_telegram_limits():
+    from coinfinder.bot.main import BOT_COMMANDS
+
+    for name, desc in BOT_COMMANDS:
+        assert 1 <= len(name) <= 32 and name.islower()
+        assert 3 <= len(desc) <= 256

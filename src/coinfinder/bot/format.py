@@ -230,17 +230,36 @@ def translate_warning(text: str) -> str:
     return text
 
 
-def format_stats(result: Any, *, filter_label: str, window_days: int, trade_size_usd: float) -> str:
-    """Render a backtest result for /stats. Always shows the interval."""
+def format_stats(
+    result: Any,
+    *,
+    filter_label: str,
+    window_days: int,
+    trade_size_usd: float,
+    system_has_signals: bool = True,
+) -> str:
+    """Render a backtest result for /karne. Always shows the interval."""
+    header = f"<b>Senin filtren, son {window_days} gün</b>\n<code>{esc(filter_label)}</code>"
     if result.signals == 0:
-        return (
-            f"<b>Senin filtren, son {window_days} gün</b>\n"
-            f"<code>{esc(filter_label)}</code>\n\nBu filtreye uyan sinyal yok."
-        )
+        # "No signals matched" means two very different things depending on
+        # whether the system has produced any signals at all, and the reader
+        # cannot tell them apart without being told which.
+        if system_has_signals:
+            reason = (
+                "Bu filtreye uyan sinyal yok. Filtreyi gevşetmeyi dene: daha düşük "
+                "<b>min bağımsız cüzdan</b>, daha yüksek <b>market cap</b> sınırı, "
+                "veya daha fazla zincir.\n\n/ayarlar"
+            )
+        else:
+            reason = (
+                "Sistem henüz hiç sinyal üretmedi, o yüzden test edilecek veri yok. "
+                "Hangi aşamada olduğunu görmek için /durum yaz — ilk sinyaller için "
+                "2-4 gün normaldir."
+            )
+        return f"{header}\n\n{reason}"
 
     lines = [
-        f"<b>Senin filtren, son {window_days} gün</b>",
-        f"<code>{esc(filter_label)}</code>",
+        header,
         f"Çıkış kuralı: <b>{esc(EXIT_TR.get(result.exit_model, result.exit_model))}</b>",
         f"İşlem başına {usd(trade_size_usd)} · ücret, kayma ve gaz düşülmüş",
         "",
