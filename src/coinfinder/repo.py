@@ -510,7 +510,8 @@ async def ensure_user(telegram_id: int, username: str | None, trial_days: int = 
         row = await conn.fetchrow(
             """
             SELECT u.*, f.chains, f.min_clusters, f.min_mcap_usd, f.max_mcap_usd,
-                   f.min_liquidity_usd, f.max_age_minutes, f.require_safe, f.min_quality
+                   f.min_liquidity_usd, f.max_age_minutes, f.require_safe, f.min_quality,
+                   f.trade_size_usd, f.max_cost_pct
             FROM users u JOIN user_filters f USING (telegram_id)
             WHERE u.telegram_id = $1
             """,
@@ -523,7 +524,8 @@ async def get_user(telegram_id: int) -> dict | None:
     row = await db.fetchrow(
         """
         SELECT u.*, f.chains, f.min_clusters, f.min_mcap_usd, f.max_mcap_usd,
-               f.min_liquidity_usd, f.max_age_minutes, f.require_safe, f.min_quality
+               f.min_liquidity_usd, f.max_age_minutes, f.require_safe, f.min_quality,
+               f.trade_size_usd, f.max_cost_pct
         FROM users u LEFT JOIN user_filters f USING (telegram_id)
         WHERE u.telegram_id = $1
         """,
@@ -542,6 +544,8 @@ async def update_filter(telegram_id: int, field: str, value: Any) -> None:
         "max_age_minutes",
         "require_safe",
         "min_quality",
+        "trade_size_usd",
+        "max_cost_pct",
     }
     if field not in allowed:  # pragma: no cover - guarded at the call site
         raise ValueError(f"not a filter field: {field}")
@@ -560,11 +564,16 @@ async def set_alerts_paused(telegram_id: int, paused: bool) -> None:
     )
 
 
-async def recipients_for(signal: dict[str, Any], chain_key: str) -> list[int]:
-    """Users whose filters this signal satisfies and who have not seen it."""
+async def recipients_for(signal: dict[str, Any], chain_key: str) -> list[dict[str, Any]]:
+    """Users whose filters this signal satisfies and who have not seen it.
+
+    Returns each user's position sizing alongside their id. The round-trip
+    cost ceiling is deliberately *not* applied here: that calculation lives in
+    backtest.costs and must not be duplicated as SQL, where it would drift.
+    """
     rows = await db.fetch(
         """
-        SELECT u.telegram_id
+        SELECT u.telegram_id, f.trade_size_usd, f.max_cost_pct
         FROM users u
         JOIN user_filters f USING (telegram_id)
         WHERE NOT u.is_blocked
@@ -592,7 +601,7 @@ async def recipients_for(signal: dict[str, Any], chain_key: str) -> list[int]:
         signal.get("quality_score") or 0.0,
         signal["id"],
     )
-    return [r["telegram_id"] for r in rows]
+    return [dict(r) for r in rows]
 
 
 async def record_alert(telegram_id: int, signal_id: int) -> None:

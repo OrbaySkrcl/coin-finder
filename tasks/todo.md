@@ -311,3 +311,58 @@ Terminal gerekliliği tamamen kaldırıldı. Kullanıcının tek arayüzü Teleg
 11. **İlerleme göstergesi tutarsızdı.** Tamamlanmış adımların *arkasında* kalan boş bir
     adım "X bulununca başlar" diyordu — sonraki adımlar zaten bitmişken bu arıza gibi
     okunuyordu.
+
+---
+
+## 6. Faz 12 — Küçük pozisyon ($5-20) için uyarlama
+
+**Kullanıcının gerçek durumu:** işlem başına $5-20. Bu, maliyet yapısını
+tamamen değiştiriyor ve sistemdeki bazı varsayımları geçersiz kılıyor.
+
+### Ölçülen gerçekler (kendi maliyet modelimizden)
+
+Gidiş-dönüş maliyeti, $40k likidite:
+
+| Pozisyon | Base | Robinhood | BNB Chain |
+|---|---|---|---|
+| $5 | %1,45 | %1,05 | **%5,45** |
+| $10 | %1,10 | %0,90 | **%3,10** |
+| $20 | %1,00 | %0,90 | **%2,00** |
+
+$10'luk pozisyonda maliyetin dağılımı:
+- Base: gaz %0,40 + ücret %0,60 + kayma %0,10 = **%1,10**
+- BNB: gaz **%2,40** + ücret %0,60 + kayma %0,10 = **%3,10**
+
+**Sonuç 1:** Bu boyutta baskın maliyet kayma değil **gaz**. BNB Chain gazı
+Base'in 6 katı, dolayısıyla bu boyutta 3-5 kat pahalı.
+
+**Sonuç 2:** $5-20 aralığı Base'de aslında **optimuma yakın**. Maliyet eğrisi
+$10-20 civarında dipte. Büyük pozisyon daha iyi değil.
+
+**Sonuç 3:** En büyük kaldıraç vergi. $10 pozisyonda %5/%5 vergili token
+gidiş-dönüş %10,81 — temiz tokenin 10 katı.
+
+### Yapılacaklar
+
+- [x] Telegram botunun tüm mesajlarını Türkçeleştir
+- [x] Kullanıcı başına işlem boyutu ayarı (`trade_size_usd`) — alert'teki
+      maliyet satırı $100 yerine **kendi boyutunda** hesaplansın
+- [x] Kullanıcı başına maliyet tavanı filtresi — "bana gidiş-dönüş maliyeti
+      %X'i geçen sinyal gönderme"
+- [x] Alert'te vergi ölçülemediğini açıkça belirt (ücretsiz katmanda
+      simülasyon yapılamıyor, en büyük risk kalemi bu)
+- [x] Rehberlere küçük-pozisyon bölümü ekle
+
+### Faz 12 sonucu
+
+- Telegram botu tamamen Türkçe (`/ayarlar`, `/durum`, `/karne` takma adlarıyla)
+- `trade_size_usd` kullanıcı ayarı: alert'teki maliyet satırı artık sabit $100
+  değil, kullanıcının kendi boyutunda hesaplanıyor
+- `max_cost_pct` filtresi: kullanıcının boyutunda gidiş-dönüş maliyeti tavanı
+  aşan sinyaller hiç gönderilmiyor. Maliyet hesabı SQL'e kopyalanmadı —
+  `backtest.costs` tek kaynak olarak kaldı, filtreleme Python tarafında
+- Gaz baskınsa alert'te ayrı uyarı satırı ("bunun %2,4 puanı gaz")
+- Vergi ölçülemediği her alert'te açıkça yazıyor
+- `/ayarlar` ekranı seçilen boyutun üç zincirdeki somut sonucunu gösteriyor
+
+Test: 224 test geçiyor (30 yeni: format, dispatch, kullanıcı boyutlandırma).

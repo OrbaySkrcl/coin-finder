@@ -292,7 +292,10 @@ async def test_recipients_match_on_filters():
     signal_id = await repo.insert_signal(signal_payload())
     signal = (await repo.pending_alert_signals())[0]
     recipients = await repo.recipients_for(signal, "base")
-    assert recipients == [1]
+    assert [r["telegram_id"] for r in recipients] == [1]
+    # Sizing travels with the recipient so the caller can price the round trip.
+    assert float(recipients[0]["trade_size_usd"]) == 100.0
+    assert recipients[0]["max_cost_pct"] is None
     _ = signal_id
 
 
@@ -335,7 +338,7 @@ async def test_a_signal_is_never_sent_to_the_same_user_twice():
     await repo.ensure_user(1, "once")
     signal_id = await repo.insert_signal(signal_payload())
     signal = (await repo.pending_alert_signals())[0]
-    assert await repo.recipients_for(signal, "base") == [1]
+    assert [r["telegram_id"] for r in await repo.recipients_for(signal, "base")] == [1]
     await repo.record_alert(1, signal_id)
     assert await repo.recipients_for(signal, "base") == []
 
@@ -426,3 +429,42 @@ async def test_end_to_end_backtest_over_database_rows():
     assert result.win_rate is not None
     assert result.dead_share == pytest.approx(0.25)
     assert result.median_round_trip_cost_pct is not None
+
+
+# --- per-user position sizing ------------------------------------------
+
+
+async def test_trade_size_defaults_and_updates():
+    user = await repo.ensure_user(1, "sizer")
+    assert float(user["trade_size_usd"]) == 100.0
+
+    await repo.update_filter(1, "trade_size_usd", 10.0)
+    assert float((await repo.get_user(1))["trade_size_usd"]) == 10.0
+
+
+async def test_cost_ceiling_defaults_off_and_updates():
+    await repo.ensure_user(1, "capper")
+    assert (await repo.get_user(1))["max_cost_pct"] is None
+
+    await repo.update_filter(1, "max_cost_pct", 5.0)
+    assert float((await repo.get_user(1))["max_cost_pct"]) == 5.0
+
+    await repo.update_filter(1, "max_cost_pct", None)
+    assert (await repo.get_user(1))["max_cost_pct"] is None
+
+
+async def test_recipients_carry_each_users_own_sizing():
+    await repo.ensure_user(1, "small")
+    await repo.ensure_user(2, "large")
+    await repo.update_filter(1, "trade_size_usd", 10.0)
+    await repo.update_filter(1, "max_cost_pct", 2.0)
+    await repo.update_filter(2, "trade_size_usd", 250.0)
+
+    await repo.insert_signal(signal_payload())
+    signal = (await repo.pending_alert_signals())[0]
+    by_id = {r["telegram_id"]: r for r in await repo.recipients_for(signal, "base")}
+
+    assert float(by_id[1]["trade_size_usd"]) == 10.0
+    assert float(by_id[1]["max_cost_pct"]) == 2.0
+    assert float(by_id[2]["trade_size_usd"]) == 250.0
+    assert by_id[2]["max_cost_pct"] is None

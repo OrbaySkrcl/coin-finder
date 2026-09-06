@@ -1,4 +1,9 @@
-"""Telegram bot: alerts, per-user filters, and honest performance reporting."""
+"""Telegram bot: alerts, per-user filters, and honest performance reporting.
+
+All user-facing text is Turkish. Everything that crosses a boundary - callback
+payloads, filter column names, exit-model identifiers - stays English so the
+data layer remains language-independent.
+"""
 
 from __future__ import annotations
 
@@ -24,7 +29,15 @@ from coinfinder import db, diagnostics, repo
 from coinfinder.backtest.costs import CostModel
 from coinfinder.backtest.engine import FilterSpec, run
 from coinfinder.backtest.exits import by_name
-from coinfinder.bot.format import format_signal, format_stats, signal_links
+from coinfinder.bot.format import (
+    DEFAULT_TRADE_SIZE_USD,
+    format_signal,
+    format_stats,
+    signal_links,
+    tr_num,
+    trade_economics,
+    usd,
+)
 from coinfinder.chains import ALL_CHAINS, BY_CHAIN_ID, get_chain
 from coinfinder.config import get_settings
 from coinfinder.logging_setup import setup_logging
@@ -36,41 +49,59 @@ ALERT_POLL_SECONDS = 15
 STATS_WINDOW_DAYS = 30
 STATS_EXIT_MODEL = "ladder"
 
-WELCOME = """<b>coin-finder</b> — smart-money signals
+#: Offered position sizes. Small values first: gas is charged per transaction,
+#: so it is small positions whose economics change most between chains, and
+#: those are the users the sizing control exists for.
+SIZE_OPTIONS = (5, 10, 20, 50, 100, 250)
+#: Round-trip cost ceilings, as a percentage of position size. 0 disables.
+COST_OPTIONS = (2, 5, 10, 0)
 
-I watch wallets with a proven track record on Base, Robinhood Chain and BNB
-Chain, and alert you when several <i>independent</i> ones buy the same token.
+WELCOME = """<b>coin-finder</b> — akıllı para sinyalleri
 
-What is different here:
-• Conviction counts independent operators, not addresses. Five wallets funded
-  from one source count once.
-• Quality is a probability you can check, not a star rating.
-• Every alert shows what the round trip actually costs at your position size,
-  and the multiple you need just to break even.
-• /stats replays <i>your</i> filter over real history, net of fees, slippage
-  and gas, with a confidence interval.
+Base, Robinhood Chain ve BNB Chain'de geçmişte kâr etmiş cüzdanları izliyorum.
+Bunlardan birkaç <i>bağımsız</i> tanesi aynı tokeni alınca sana haber veriyorum.
 
-These are data, not advice. Most tokens in this market go to zero.
+Farkı şurada:
+• Kanaat, adres sayısını değil <b>bağımsız kişi sayısını</b> sayar. Aynı
+  kaynaktan beslenen beş cüzdan bir kişidir, beş değil.
+• Kalite bir yıldız değil, <b>kontrol edebileceğin bir olasılık</b>.
+• Her sinyalde <b>senin pozisyon boyutunda</b> gidiş-dönüş maliyeti ve
+  başabaş çarpanı yazıyor. Gaz işlem başına alınır, o yüzden bu sayı
+  $10 ile $500 arasında tamamen değişir.
+• /stats senin filtreni gerçek geçmişe karşı test eder — ücret, kayma ve
+  gaz düşülmüş, güven aralığıyla birlikte.
 
-/filters — tune what reaches you
-/stats — what your filter actually returned
-/top — highest-scoring wallets
-/pause — stop alerts"""
+Bunlar veridir, yatırım tavsiyesi değildir. Bu piyasadaki tokenlerin çoğu
+sıfırlanır.
+
+/ayarlar — sana ne ulaşacağını belirle
+/stats — filtrenin gerçekte ne kazandırdığı
+/durum — sistem çalışıyor mu
+/top — en yüksek puanlı cüzdanlar
+/pause — bildirimleri durdur"""
 
 
 def _menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="⚙️ Filters", callback_data="menu:filters"),
-                InlineKeyboardButton(text="📊 My stats", callback_data="menu:stats"),
+                InlineKeyboardButton(text="⚙️ Ayarlar", callback_data="menu:filters"),
+                InlineKeyboardButton(text="📊 Karnem", callback_data="menu:stats"),
             ],
             [
-                InlineKeyboardButton(text="🏆 Top wallets", callback_data="menu:top"),
-                InlineKeyboardButton(text="❓ Help", callback_data="menu:help"),
+                InlineKeyboardButton(text="🏆 En iyi cüzdanlar", callback_data="menu:top"),
+                InlineKeyboardButton(text="🩺 Sistem durumu", callback_data="menu:status"),
             ],
         ]
     )
+
+
+def user_size(user: dict[str, Any]) -> float:
+    raw = user.get("trade_size_usd")
+    try:
+        return float(raw) if raw else DEFAULT_TRADE_SIZE_USD
+    except (TypeError, ValueError):
+        return DEFAULT_TRADE_SIZE_USD
 
 
 def _filters_keyboard(user: dict[str, Any]) -> InlineKeyboardMarkup:
@@ -84,21 +115,58 @@ def _filters_keyboard(user: dict[str, Any]) -> InlineKeyboardMarkup:
         ]
         for key, chain in ALL_CHAINS.items()
     ]
-    current = int(user.get("min_clusters") or 3)
+
+    current_clusters = int(user.get("min_clusters") or 3)
     rows.append(
         [
             InlineKeyboardButton(
-                text=f"{'●' if current == n else '○'} {n}+ wallets", callback_data=f"clusters:{n}"
+                text=f"{'●' if current_clusters == n else '○'} {n}+ cüzdan",
+                callback_data=f"clusters:{n}",
             )
             for n in (2, 3, 4, 5)
         ]
     )
-    caps = [("<100k", 100_000), ("<500k", 500_000), ("<2M", 2_000_000), ("any", 0)]
-    active = user.get("max_mcap_usd")
+
+    size = user_size(user)
     rows.append(
         [
             InlineKeyboardButton(
-                text=f"{'●' if _same(active, value) else '○'} MC {label}",
+                text=f"{'●' if abs(size - n) < 0.01 else '○'} ${n}",
+                callback_data=f"size:{n}",
+            )
+            for n in SIZE_OPTIONS[:3]
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"{'●' if abs(size - n) < 0.01 else '○'} ${n}",
+                callback_data=f"size:{n}",
+            )
+            for n in SIZE_OPTIONS[3:]
+        ]
+    )
+
+    ceiling = user.get("max_cost_pct")
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=(
+                    f"{'●' if _ceiling_active(ceiling, n) else '○'} "
+                    + ("maliyet sınırsız" if n == 0 else f"maliyet ≤%{n}")
+                ),
+                callback_data=f"cost:{n}",
+            )
+            for n in COST_OPTIONS
+        ]
+    )
+
+    caps = (("<100b", 100_000), ("<500b", 500_000), ("<2M", 2_000_000), ("sınırsız", 0))
+    active_cap = user.get("max_mcap_usd")
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=f"{'●' if _same(active_cap, value) else '○'} MC {label}",
                 callback_data=f"maxmc:{value}",
             )
             for label, value in caps
@@ -107,7 +175,11 @@ def _filters_keyboard(user: dict[str, Any]) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text=f"{'🛡 Block risky: ON' if user.get('require_safe') else '🛡 Block risky: OFF'}",
+                text=(
+                    "🛡 Riskli tokenleri ele: AÇIK"
+                    if user.get("require_safe")
+                    else "🛡 Riskli tokenleri ele: KAPALI"
+                ),
                 callback_data="safe:toggle",
             )
         ]
@@ -115,10 +187,41 @@ def _filters_keyboard(user: dict[str, Any]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _ceiling_active(current: Any, option: int) -> bool:
+    if option == 0:
+        return current is None
+    return current is not None and abs(float(current) - option) < 0.01
+
+
 def _same(current: Any, value: int) -> bool:
     if value == 0:
         return current is None
     return current is not None and abs(float(current) - value) < 1.0
+
+
+def _filters_summary(user: dict[str, Any]) -> str:
+    size = user_size(user)
+    ceiling = user.get("max_cost_pct")
+    lines = [
+        "<b>Ayarların</b>",
+        "",
+        f"İşlem başına: <b>{usd(size)}</b>",
+        f"Minimum bağımsız cüzdan: <b>{int(user.get('min_clusters') or 3)}</b>",
+    ]
+    if ceiling:
+        lines.append(f"Maliyet tavanı: <b>%{tr_num(float(ceiling), 0)}</b> gidiş-dönüş")
+    else:
+        lines.append("Maliyet tavanı: <b>yok</b>")
+
+    # Concrete consequence of the chosen size, per chain. This is the whole
+    # point of the sizing control, so it belongs in front of the buttons.
+    lines += ["", f"<i>{usd(size)} ile $40b likiditeli bir havuzda:</i>"]
+    for chain in ALL_CHAINS.values():
+        cost_pct, break_even = trade_economics(
+            liquidity_usd=40_000.0, chain=chain, trade_size_usd=size
+        )
+        lines.append(f"  {chain.name}: %{tr_num(cost_pct, 2)} → başabaş {tr_num(break_even, 3)}x")
+    return "\n".join(lines)
 
 
 def user_filter_spec(user: dict[str, Any]) -> FilterSpec:
@@ -152,44 +255,45 @@ async def on_start(message: Message) -> None:
     suffix = ""
     if trial and trial > datetime.now(UTC):
         days = max(0, (trial - datetime.now(UTC)).days)
-        suffix = f"\n\n🎁 Free trial: <b>{days} day(s)</b> remaining."
+        suffix = f"\n\n🎁 Deneme süresi: <b>{days} gün</b> kaldı."
     await message.answer(WELCOME + suffix, reply_markup=_menu())
 
 
-@router.message(Command("help"))
+@router.message(Command("help", "yardim"))
 async def on_help(message: Message) -> None:
     await message.answer(WELCOME, reply_markup=_menu())
 
 
-@router.message(Command("filters"))
+@router.message(Command("ayarlar", "filters"))
 async def on_filters(message: Message) -> None:
     if message.from_user is None:
         return
     user = await repo.ensure_user(message.from_user.id, message.from_user.username)
-    await message.answer("<b>Your filters</b>", reply_markup=_filters_keyboard(user))
+    await message.answer(_filters_summary(user), reply_markup=_filters_keyboard(user))
 
 
-@router.message(Command("pause"))
+@router.message(Command("pause", "durdur"))
 async def on_pause(message: Message) -> None:
     if message.from_user is None:
         return
     await repo.set_alerts_paused(message.from_user.id, True)
-    await message.answer("Alerts paused. /resume to turn them back on.")
+    await message.answer("Bildirimler durduruldu. Tekrar açmak için /resume yaz.")
 
 
-@router.message(Command("resume"))
+@router.message(Command("resume", "devam"))
 async def on_resume(message: Message) -> None:
     if message.from_user is None:
         return
     await repo.set_alerts_paused(message.from_user.id, False)
-    await message.answer("Alerts resumed.")
+    await message.answer("Bildirimler tekrar açıldı.")
 
 
-@router.message(Command("stats"))
+@router.message(Command("stats", "karne"))
 async def on_stats(message: Message) -> None:
     if message.from_user is None:
         return
-    await message.answer(await build_stats(message.from_user.id, message.from_user.username))
+    notice = await message.answer("Hesaplıyorum…")
+    await notice.edit_text(await build_stats(message.from_user.id, message.from_user.username))
 
 
 @router.message(Command("top"))
@@ -218,35 +322,48 @@ async def on_menu(query: CallbackQuery) -> None:
         return
     action = query.data.split(":", 1)[1]
     await query.answer()
+    target = query.message
+    if target is None:
+        return
+
     if action == "filters":
         user = await repo.ensure_user(query.from_user.id, query.from_user.username)
-        await query.message.answer(  # type: ignore[union-attr]
-            "<b>Your filters</b>", reply_markup=_filters_keyboard(user)
-        )
+        await target.answer(_filters_summary(user), reply_markup=_filters_keyboard(user))
     elif action == "stats":
-        text = await build_stats(query.from_user.id, query.from_user.username)
-        await query.message.answer(text)  # type: ignore[union-attr]
+        await target.answer(await build_stats(query.from_user.id, query.from_user.username))
     elif action == "top":
-        await query.message.answer(await build_top())  # type: ignore[union-attr]
+        await target.answer(await build_top())
+    elif action == "status":
+        report = await diagnostics.run()
+        await target.answer(report.as_telegram())
     else:
-        await query.message.answer(WELCOME, reply_markup=_menu())  # type: ignore[union-attr]
+        await target.answer(WELCOME, reply_markup=_menu())
 
 
-@router.callback_query(F.data.regexp(r"^(chain|clusters|maxmc|safe):"))
+@router.callback_query(F.data.regexp(r"^(chain|clusters|maxmc|safe|size|cost):"))
 async def on_filter_change(query: CallbackQuery) -> None:
     if query.from_user is None or not isinstance(query.data, str):
         return
     kind, value = query.data.split(":", 1)
     user = await repo.ensure_user(query.from_user.id, query.from_user.username)
+    toast = "Kaydedildi"
 
     if kind == "chain":
         chains = set(user.get("chains") or [])
         chains.symmetric_difference_update({value})
         if not chains:  # never leave a user with nothing selected
             chains = {value}
+            toast = "En az bir zincir açık kalmalı"
         await repo.update_filter(query.from_user.id, "chains", sorted(chains))
     elif kind == "clusters":
         await repo.update_filter(query.from_user.id, "min_clusters", int(value))
+    elif kind == "size":
+        await repo.update_filter(query.from_user.id, "trade_size_usd", float(value))
+        toast = f"İşlem boyutu ${value}"
+    elif kind == "cost":
+        limit = float(value)
+        await repo.update_filter(query.from_user.id, "max_cost_pct", None if limit == 0 else limit)
+        toast = "Maliyet tavanı kaldırıldı" if limit == 0 else f"Maliyet tavanı %{value}"
     elif kind == "maxmc":
         amount = int(value)
         await repo.update_filter(
@@ -257,12 +374,15 @@ async def on_filter_change(query: CallbackQuery) -> None:
             query.from_user.id, "require_safe", not bool(user.get("require_safe"))
         )
 
-    await query.answer("Saved")
+    await query.answer(toast)
     updated = await repo.get_user(query.from_user.id) or {}
-    with contextlib.suppress(Exception):
-        await query.message.edit_reply_markup(  # type: ignore[union-attr]
-            reply_markup=_filters_keyboard(updated)
-        )
+    # An InaccessibleMessage (too old to edit) has no edit_text; the isinstance
+    # check is what keeps the type honest rather than a suppressed exception.
+    if isinstance(query.message, Message):
+        with contextlib.suppress(Exception):
+            await query.message.edit_text(
+                _filters_summary(updated), reply_markup=_filters_keyboard(updated)
+            )
 
 
 # --- content builders --------------------------------------------------
@@ -271,22 +391,28 @@ async def on_filter_change(query: CallbackQuery) -> None:
 async def build_stats(telegram_id: int, username: str | None) -> str:
     user = await repo.ensure_user(telegram_id, username)
     spec = user_filter_spec(user)
+    size = user_size(user)
     signals = await repo.signals_for_backtest(STATS_WINDOW_DAYS)
     result = run(
         signals,
         spec=spec,
         exit_model=by_name(STATS_EXIT_MODEL),
-        size_usd=100.0,
+        size_usd=size,
         cost=CostModel(),
     )
-    return format_stats(result, filter_label=spec.label(), window_days=STATS_WINDOW_DAYS)
+    return format_stats(
+        result,
+        filter_label=spec.label(),
+        window_days=STATS_WINDOW_DAYS,
+        trade_size_usd=size,
+    )
 
 
 async def build_top(limit: int = 10) -> str:
     lines = [
-        "<b>Top-scoring wallets</b>",
-        "<i>Score blends recent PnL, win rate shrunk toward a prior,</i>",
-        "<i>median multiple, and breadth across distinct tokens.</i>",
+        "<b>En yüksek puanlı cüzdanlar</b>",
+        "<i>Puan; yakın dönem kârı, bir önsele çekilmiş kazanç oranı,</i>",
+        "<i>medyan çarpan ve farklı token sayısını birleştirir.</i>",
     ]
     found = False
     for chain in ALL_CHAINS.values():
@@ -296,23 +422,36 @@ async def build_top(limit: int = 10) -> str:
         found = True
         lines += ["", f"<b>{chain.name}</b>"]
         for rank, wallet in enumerate(wallets, 1):
-            parts = [f"score {float(wallet['score']):.0f}"]
+            parts = [f"puan {float(wallet['score']):.0f}"]
             if wallet.get("win_rate") is not None:
-                parts.append(f"win {float(wallet['win_rate']):.0%}")
+                parts.append(f"kazanç %{float(wallet['win_rate']) * 100:.0f}")
             if wallet.get("median_multiple") is not None:
-                parts.append(f"med {float(wallet['median_multiple']):.2f}x")
-            parts.append(f"{wallet['closed_trades']} trades")
+                parts.append(f"medyan {tr_num(float(wallet['median_multiple']))}x")
+            parts.append(f"{wallet['closed_trades']} işlem")
             lines.append(f"{rank}. <code>{wallet['wallet'][:10]}…</code> " + " · ".join(parts))
     if not found:
-        lines.append("\nNo wallets scored yet — discovery and scoring are still warming up.")
+        lines.append("\nHenüz puanlanmış cüzdan yok — keşif ve puanlama sürüyor.")
     return "\n".join(lines)
 
 
 # --- alert dispatch ----------------------------------------------------
 
 
+def _recipient_size(recipient: dict[str, Any]) -> float:
+    raw = recipient.get("trade_size_usd")
+    try:
+        return float(raw) if raw else DEFAULT_TRADE_SIZE_USD
+    except (TypeError, ValueError):
+        return DEFAULT_TRADE_SIZE_USD
+
+
 async def dispatch_alerts(bot: Bot, *, limit: int = 25) -> int:
-    """Send pending signals to every user whose filters they match."""
+    """Send pending signals to every user whose filters they match.
+
+    Each message is rendered per recipient, because the round-trip cost - the
+    line that decides whether the trade is worth taking - depends on their
+    position size.
+    """
     pending = await repo.pending_alert_signals(limit)
     sent = 0
     for signal in pending:
@@ -321,16 +460,36 @@ async def dispatch_alerts(bot: Bot, *, limit: int = 25) -> int:
             await repo.mark_alert_sent(int(signal["id"]))
             continue
 
-        text = format_signal(signal, chain)
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text=label, url=url)]
                 for label, url in signal_links(signal, chain)[:3]
             ]
         )
-        for telegram_id in await repo.recipients_for(signal, chain.key):
+        liquidity = signal.get("snap_liquidity_usd")
+        liquidity_usd = float(liquidity) if liquidity is not None else None
+
+        for recipient in await repo.recipients_for(signal, chain.key):
+            telegram_id = int(recipient["telegram_id"])
+            size = _recipient_size(recipient)
+
+            ceiling = recipient.get("max_cost_pct")
+            if ceiling is not None:
+                cost_pct, _ = trade_economics(
+                    liquidity_usd=liquidity_usd, chain=chain, trade_size_usd=size
+                )
+                if cost_pct > float(ceiling):
+                    # Uneconomic at this user's size: mark it seen so it is not
+                    # reconsidered, but send nothing.
+                    await repo.record_alert(telegram_id, int(signal["id"]))
+                    continue
+
             try:
-                await bot.send_message(telegram_id, text, reply_markup=keyboard)
+                await bot.send_message(
+                    telegram_id,
+                    format_signal(signal, chain, trade_size_usd=size),
+                    reply_markup=keyboard,
+                )
                 await repo.record_alert(telegram_id, int(signal["id"]))
                 sent += 1
             except TelegramForbiddenError:

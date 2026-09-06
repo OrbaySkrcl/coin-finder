@@ -13,7 +13,7 @@ Botunuza yazacağınız komutların tamamı bu kadar:
 |---|---|
 | `/start` | Botu açar, deneme sürenizi başlatır |
 | `/durum` | **En önemlisi.** Sistem çalışıyor mu, hangi aşamada, sorun var mı |
-| `/filters` | Hangi sinyallerin size ulaşacağını ayarlar |
+| `/ayarlar` | İşlem boyutu, zincirler, maliyet tavanı, filtreler |
 | `/stats` | **Sizin filtrenizin** geçmişte gerçekte ne kazandırdığı |
 | `/top` | En yüksek puanlı cüzdanlar |
 | `/pause` | Bildirimleri durdurur |
@@ -73,22 +73,35 @@ Yapmıyorsa model yanlıştır ve bunu ölçebilirsiniz — yıldızlarla bunu y
 > İlk 400 sinyal sonuçlanana kadar bu sayı bir **tahmin modelinden** gelir,
 > ölçümden değil. Veri birikince model gerçek sonuçlara göre yeniden ayarlanır.
 
-**`💸 Round trip at $100: %1,6 → need 1,02x to break even`**
-**Alerttteki en değerli satır bu.** $100'lük bir işlemde girip çıkmanın toplam
-maliyeti %1,6. Yani zarar etmemek için tokenin 1,02 katına çıkması yeterli.
+**`💸 $10 için gidiş-dönüş: %1,1 → başabaş 1,011x`**
+**Alerttteki en değerli satır bu.** `/ayarlar`'da seçtiğiniz işlem boyutuna
+göre hesaplanır. $10'luk bir işlemde girip çıkmanın toplam maliyeti %1,1;
+zarar etmemek için tokenin 1,011 katına çıkması yeterli.
 
-Ama bu **sizin işlem boyutunuza göre değişir.** Aynı tokende:
+Aynı tokende, farklı boyutlarda:
 
-| Pozisyon | Maliyet | Başabaş için gereken |
+| Pozisyon | Maliyet | Başabaş |
 |---|---|---|
-| $100 | %1,6 | 1,02x |
-| $500 | %5,3 | 1,06x |
-| $2.000 | %16,9 | 1,20x |
-| $5.000 | %33,4 | **1,56x** |
+| $10 | %1,1 | 1,011x |
+| $100 | %1,6 | 1,017x |
+| $500 | %5,3 | 1,056x |
+| $5.000 | %33,4 | **1,562x** |
 
 Havuz sığ olduğu için büyük emir kendi fiyatını yukarı itiyor, çıkarken de
 aşağı. **Bu tek tablo, çoğu insanın neden kâr eden sinyallerde bile para
 kaybettiğinin cevabıdır.**
+
+Bazen altında şu satır da çıkar:
+
+`⛽ bunun %2,4 puanı gaz — bu boyutta BNB Chain pahalı`
+
+Bu, maliyetin çoğunun gazdan geldiği anlamına gelir. Çözümü filtre değiştirmek
+değil, **o zinciri kapatmak veya pozisyonu büyütmek.**
+
+`ℹ️ token vergisi bu hesaba dahil değil (ölçülemiyor)` satırı her alertte var.
+Ücretsiz altyapıda vergi simülasyonu yapılamıyor ve küçük pozisyonda en büyük
+maliyet kalemi bu — bu yüzden sessiz geçilmiyor. Bölüm 2b'deki 10 saniyelik
+kontrolü yapın.
 
 **`🛡 🟡 Caution`**
 Güvenlik değerlendirmesi:
@@ -103,6 +116,95 @@ Güvenlik değerlendirmesi:
 > üçüncü parti servis yok. Sistem bu zincirde **asla "temiz" demez**, her
 > zaman "dikkat" der ve bunu açıkça yazar. Bilerek böyle: bilmediğimiz bir
 > şeye güvenli demek en kötü yalandır.
+
+---
+
+## 2b. Küçük pozisyonla ($5-20) çalışıyorsanız
+
+Bu boyutta maliyet yapısı tamamen değişiyor. Aşağıdakiler sistemin kendi
+maliyet modelinden hesaplanmış gerçek sayılar, $40b likiditeli bir havuz için:
+
+| Pozisyon | Base | Robinhood | BNB Chain |
+|---|---|---|---|
+| $5 | %1,45 | %1,05 | **%5,45** |
+| $10 | %1,10 | %0,90 | **%3,10** |
+| $20 | %1,00 | %0,90 | **%2,00** |
+| $100 | %1,62 | %1,60 | %1,82 |
+| $500 | %5,35 | %5,34 | %5,39 |
+
+**Üç sonuç çıkıyor:**
+
+**1. Bu boyutta baskın maliyet kayma değil, gaz.** $10'luk bir işlemde:
+
+| Zincir | Toplam | Gaz | DEX ücreti | Kayma |
+|---|---|---|---|---|
+| Base | %1,10 | %0,40 | %0,60 | %0,10 |
+| BNB Chain | **%3,10** | **%2,40** | %0,60 | %0,10 |
+
+Gaz işlem başına alınır, dolara göre değil. BNB Chain gazı Base'in ~6 katı
+olduğu için bu boyutta 3 kat pahalı. **$5-20 çalışıyorsanız BNB Chain'i
+kapatın.** Aynı sinyal Base'de gelirse alın, BNB'de gelirse maliyet yer.
+
+**2. $5-20 aslında optimuma yakın.** Maliyet eğrisinin dibi burada:
+
+| Havuz likiditesi | En ucuz pozisyon | O boyutta maliyet |
+|---|---|---|
+| $3b | $6 | %2,06 |
+| $10b | $10 | %1,40 |
+| $40b | $20 | %1,00 |
+| $150b | $39 | %0,81 |
+
+Bakiyeniz artınca pozisyonu büyütmek *otomatik olarak* iyi değil. $500'e
+çıkarsanız maliyet %1'den %5,3'e fırlar — beş kat. Doğru büyüme yolu
+**pozisyon başına miktarı değil, pozisyon sayısını artırmak.**
+
+**3. En büyük tehlike vergi.** $10 pozisyonda, $40b likidite:
+
+| Al/sat vergisi | Gidiş-dönüş | Başabaş |
+|---|---|---|
+| %0 | %1,10 | 1,011x |
+| %3 | %6,99 | 1,075x |
+| %5 | **%10,81** | **1,121x** |
+| %10 | **%20,02** | **1,250x** |
+
+%5/%5 vergili bir token, temiz bir tokenden **10 kat** pahalı. Ve bot bunu
+ölçemiyor — ücretsiz RPC'de vergi simülasyonu yapılamıyor, o yüzden her
+alertte "token vergisi bu hesaba dahil değil" yazıyor.
+
+> **Alım öncesi 10 saniyelik kontrol:** kontrat adresini kopyalayıp
+> [honeypot.is](https://honeypot.is) veya
+> [tokensniffer.com](https://tokensniffer.com) sitesine yapıştırın. Al/sat
+> vergisini gösterir. %5'in üstündeyse bu boyutta almayın.
+
+**4. Sığ havuzdan kaçının.** $10 pozisyon, Base:
+
+| Likidite | Gidiş-dönüş | Başabaş |
+|---|---|---|
+| $500 | %8,37 | 1,091x |
+| $1b | %4,83 | 1,051x |
+| $3b | %2,31 | 1,024x |
+| $8b | %1,49 | 1,015x |
+| $20b+ | %1,20 | 1,012x |
+
+$5b altındaki havuzlarda maliyet hızla tırmanıyor.
+
+### Önerilen ayarlar ($5-20 için)
+
+`/ayarlar` komutundan:
+
+| Ayar | Değer | Neden |
+|---|---|---|
+| İşlem başına | **$10** veya **$20** | Maliyet eğrisinin dibi |
+| Zincirler | **Base + Robinhood**, BNB kapalı | BNB gazı bu boyutta 3 kat pahalı |
+| Min bağımsız cüzdan | **3** | Denge noktası |
+| Maliyet tavanı | **%2** | Pahalı sinyalleri hiç göstermez |
+| Riskli tokenleri ele | **AÇIK** | $10'da bile rug $10 kaybettirir |
+| Market cap | **<500b** | Yükselme alanı bırakır |
+
+**Maliyet tavanı** en işinize yarayacak yeni ayar: seçtiğiniz işlem boyutunda
+gidiş-dönüş maliyeti tavanı aşan sinyaller size hiç gönderilmez. $10 ile
+çalışıp %2 tavan koyarsanız, sığ havuzlu ve pahalı zincirdeki sinyaller
+otomatik olarak elenir.
 
 ---
 
